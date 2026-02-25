@@ -115,7 +115,9 @@ def _build_solved_fields(details):
 
             if provider.get("attempts") is not None:
                 try:
-                    grouped_provider["attempts"] += max(0, int(provider.get("attempts")))
+                    grouped_provider["attempts"] += max(
+                        0, int(provider.get("attempts"))
+                    )
                     grouped_provider["has_attempts"] = True
                 except (TypeError, ValueError):
                     pass
