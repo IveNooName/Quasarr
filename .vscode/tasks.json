@@ -14,6 +14,12 @@
             "problemMatcher": []
         },
         {
+            "label": "Activate venv",
+            "type": "shell",
+            "command": ". .venv/bin/activate",
+            "problemMatcher": []
+        },
+        {
             "label": "Reset local branch to upstream",
             "type": "shell",
             "command": "git reset --hard @{u}",

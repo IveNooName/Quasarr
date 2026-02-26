@@ -244,31 +244,9 @@ Most feature requests can be satisfied by:
 <img src="https://imgur.com/iHBqLwT.png" width="64" height="64" />
 
 SponsorsHelper is a Docker image that solves CAPTCHAs and decrypts links for Quasarr.  
-Image access is limited to [active monthly GitHub sponsors](https://github.com/users/rix1337/sponsorship).
-
-> **Why private / sponsor-only?**  
-> SponsorsHelper is intentionally distributed offsite as a private, paid component to increase friction for site
-> owners who actively try to detect, fight, and break CAPTCHA-circumvention workflows.
+The image is public, but requires a valid [active monthly GitHub sponsor](https://github.com/users/rix1337/sponsorship) check at runtime.
 
 [![Github Sponsorship](https://img.shields.io/badge/support-me-red.svg)](https://github.com/users/rix1337/sponsorship)
-
----
-
-## 🔑 GitHub Token Setup
-
-1. Start your [sponsorship](https://github.com/users/rix1337/sponsorship) first.
-2. Open [GitHub Classic Token Settings](https://github.com/settings/tokens/new?type=classic)
-3. Name it (e.g., `SponsorsHelper`) and choose unlimited expiration
-4. Enable these scopes:
-    - `read:packages`
-    - `read:user`
-    - `read:org`
-5. Click **Generate token** and copy it for the next steps
-
-Scope details:
-- `read:packages` → allows pulling the private SponsorsHelper image from GHCR.
-- `read:org` → allows checking access to the private sponsor org/repository.
-- `read:user` → allows validating that your GitHub account still has an active sponsorship.
 
 ---
 
@@ -284,30 +262,29 @@ Scope details:
 
 ---
 
-## 🐋 Docker Login
+## 🔑 GitHub Auth
 
-⚠️ **If not logged in, the image will not download.**
+> ⚠️ Mount `/config` to persistent storage. Otherwise the auth token is lost on container recreation/update.
 
-```bash
-echo "GITHUB_TOKEN" | docker login ghcr.io -u USERNAME --password-stdin
-```
+1. Start your [sponsorship](https://github.com/users/rix1337/sponsorship).
+2. Start SponsorsHelper.
+3. In container logs, open the GitHub authorization URL shown by SponsorsHelper.
+4. Confirm the authorization in browser.
+5. Done. SponsorsHelper caches the auth token in `/config/github_oauth_token.json`.
 
-* `USERNAME` → your GitHub username
-* `GITHUB_TOKEN` → the token you just created
+---
 
 ## ▶️ Run SponsorsHelper
-
-⚠️ **Without a valid GitHub token linked to an active sponsorship, the image will not run.**
 
 ```bash
 docker run -d \
   --name='SponsorsHelper' \
+  -v '/path/to/sponsorshelper-config:/config' \
   -e 'QUASARR_URL'='http://192.168.0.1:8080' \
   -e 'QUASARR_API_KEY'='your_quasarr_api_key_here' \
   -e 'APIKEY_2CAPTCHA'='your_2captcha_api_key_here' \
-  -e 'GITHUB_TOKEN'='ghp_123.....456789' \
   -e 'FLARESOLVERR_URL'='http://10.10.0.1:8191/v1' \
-  ghcr.io/rix1337-sponsors/docker/helper:latest
+  ghcr.io/rix1337/sponsors-helper:latest
 ```
 
 | Parameter              | Description                                                                           |
@@ -316,8 +293,11 @@ docker run -d \
 | `QUASARR_API_KEY`      | Your Quasarr API key (found in Quasarr web UI under "API Settings")                   |
 | `APIKEY_2CAPTCHA`      | [2Captcha](https://2captcha.com/?from=27506687) account API key                       |
 | `DEATHBYCAPTCHA_TOKEN` | [DeathByCaptcha](https://deathbycaptcha.com/register?refid=6184288242b) account token |
-| `GITHUB_TOKEN`         | Classic GitHub PAT with the scopes listed above                                       |
 | `FLARESOLVERR_URL`     | Local URL of [FlareSolverr](https://github.com/FlareSolverr/FlareSolverr)             |
+
+| Volume | Purpose |
+|--------|---------|
+| `/config` | Persistent SponsorsHelper state (including cached GitHub auth token) |
 
 > - [2Captcha](https://2captcha.com/?from=27506687) is the recommended CAPTCHA solving service.
 > - [DeathByCaptcha](https://deathbycaptcha.com/register?refid=6184288242b) can serve as a fallback or work on its own.
