@@ -280,8 +280,10 @@ docker run -d \
   -v '/path/to/sponsorshelper-config:/config' \
   -e 'QUASARR_URL'='http://192.168.0.1:8080' \
   -e 'QUASARR_API_KEY'='your_quasarr_api_key_here' \
-  -e 'APIKEY_2CAPTCHA'='your_2captcha_api_key_here' \
   -e 'FLARESOLVERR_URL'='http://10.10.0.1:8191/v1' \
+  -e 'APIKEY_2CAPTCHA'='your_2captcha_api_key_here' \
+  -e 'DEATHBYCAPTCHA_TOKEN'='your_deathbycaptcha_token_here' \
+  -e 'TZ'='Europe/Berlin' \
   ghcr.io/rix1337/sponsors-helper:latest
 ```
 
@@ -289,9 +291,10 @@ docker run -d \
 |------------------------|---------------------------------------------------------------------------------------|
 | `QUASARR_URL`          | Local URL of Quasarr (e.g., `http://192.168.0.1:8080`)                                |
 | `QUASARR_API_KEY`      | Your Quasarr API key (found in Quasarr web UI under "API Settings")                   |
+| `FLARESOLVERR_URL`     | Local URL of [FlareSolverr](https://github.com/FlareSolverr/FlareSolverr)             |
 | `APIKEY_2CAPTCHA`      | [2Captcha](https://2captcha.com/?from=27506687) account API key                       |
 | `DEATHBYCAPTCHA_TOKEN` | [DeathByCaptcha](https://deathbycaptcha.com/register?refid=6184288242b) account token |
-| `FLARESOLVERR_URL`     | Local URL of [FlareSolverr](https://github.com/FlareSolverr/FlareSolverr)             |
+| `TZ`                   | Optional. Timezone for SponsorsHelper (e.g., `Europe/Berlin`)                           |
 
 | Volume | Purpose |
 |--------|---------|
