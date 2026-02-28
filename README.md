@@ -172,13 +172,9 @@ docker run -d \
   -v /path/to/config/:/config:rw \
   -e 'INTERNAL_ADDRESS'='http://192.168.0.1:8080' \
   -e 'EXTERNAL_ADDRESS'='https://foo.bar/' \
-  -e 'DISCORD'='https://discord.com/api/webhooks/1234567890/ABCDEFGHIJKLMN' \
-  -e 'TELEGRAM_BOT_TOKEN'='123456789:ABCdefGHIjklMNOpqrSTUvwxYZ_0123456789a' \
-  -e 'TELEGRAM_CHAT_ID'='987654321' \
   -e 'USER'='admin' \
   -e 'PASS'='change-me' \
   -e 'AUTH'='form' \
-  -e 'SILENT'='True' \
   -e 'TZ'='Europe/Berlin' \
   ghcr.io/rix1337/quasarr:latest
   ```
@@ -187,12 +183,8 @@ docker run -d \
 |--------------------|------------------------------------------------------------------------------------------------------------|
 | `INTERNAL_ADDRESS` | **Required.** Internal URL so Radarr/Sonarr/Lidarr/LazyLibrarian can reach Quasarr. **Must include port.** |
 | `EXTERNAL_ADDRESS` | Optional. External URL (e.g. reverse proxy). Always protect external access with authentication.           |
-| `DISCORD`          | Optional. Discord webhook URL for notifications.                                                           |
-| `TELEGRAM_BOT_TOKEN` | Optional. Telegram Bot API token for notifications. Create a bot via [@BotFather](https://t.me/BotFather). |
-| `TELEGRAM_CHAT_ID` | Optional. Telegram chat ID to send notifications to. Required when `TELEGRAM_BOT_TOKEN` is set.            |
 | `USER` / `PASS`    | Optional, but recommended! Username / Password to protect the web UI.                                      |
 | `AUTH`             | Authentication mode. Supported values: `form` or `basic`.                                                  |
-| `SILENT`           | Optional. If `True`, silences all notifications except SponsorHelper error messages. If `MAX`, blocks all notifications except SponsorHelper failure messages. |
 | `TZ`               | Optional. Timezone. Incorrect values may cause HTTPS/SSL issues.                                           |
 
 # Manual setup
@@ -206,17 +198,18 @@ docker run -d \
 ```
 export INTERNAL_ADDRESS=http://192.168.0.1:8080
 export EXTERNAL_ADDRESS=https://foo.bar/
-export DISCORD=https://discord.com/api/webhooks/1234567890/ABCDEFGHIJKLMN
-export TELEGRAM_BOT_TOKEN=123456789:ABCdefGHIjklMNOpqrSTUvwxYZ_0123456789a
-export TELEGRAM_CHAT_ID=987654321
 quasarr
   ```
 
-* `DISCORD` see `DISCORD` docker variable
-* `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` see docker variables above and [Setting up Telegram notifications](#setting-up-telegram-notifications)
 * `EXTERNAL_ADDRESS` see `EXTERNAL_ADDRESS` docker variable
+* Configure notifications in **Web UI → Notifications Configuration** (below FlareSolverr)
   
 # Notifications
+Configure notifications in **Web UI → Notifications Configuration** (below FlareSolverr):
+- Set provider credentials (Discord webhook, Telegram bot token/chat ID)
+- Choose notification types per provider
+- Send a provider-specific test message directly from the UI
+
 ## Discord
 
 <details>
@@ -224,7 +217,9 @@ quasarr
 
 1. Open your Discord server and go to **Server Settings → Integrations → Webhooks**.
 2. Click **New Webhook**, choose the target channel, and copy the **Webhook URL**.
-3. Set the `DISCORD` environment variable to this URL.  
+3. Open Quasarr UI and go to **Notifications Configuration**.
+4. Paste the webhook URL into **Discord → Webhook URL**.
+5. Click **Save Notification Settings** and then **Send Discord Test**.
 
 </details>
 
@@ -242,7 +237,9 @@ quasarr
    ```
    Look for `"chat":{"id":` in the JSON response. That number is your `TELEGRAM_CHAT_ID`.
    > **Tip:** For a group chat, add the bot to the group first, send a message in the group, then call `getUpdates`.
-5. **Configure Quasarr** — Set both `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` in your environment (`.env` file, Docker `-e` flags, or `docker-compose.yml`). 
+5. **Configure Quasarr** — Open **Notifications Configuration** in Quasarr UI.
+6. Paste both values into **Telegram → Bot Token / Chat ID**.
+7. Click **Save Notification Settings** and then **Send Telegram Test**.
   
 </details>
 <br>

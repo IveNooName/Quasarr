@@ -13,6 +13,7 @@ from quasarr.providers import shared_state
 from quasarr.providers.auth import require_api_key
 from quasarr.providers.log import info, warn
 from quasarr.providers.notifications import send_notification
+from quasarr.providers.notifications.notification_types import NotificationType
 from quasarr.providers.statistics import StatsHelper
 from quasarr.providers.utils import download_package
 from quasarr.storage.categories import (
@@ -149,7 +150,10 @@ def setup_sponsors_helper_routes(app):
                     shared_state.get_db("protected").delete(package_id)
 
                     send_notification(
-                        shared_state, title=title, case="solved", details=notification
+                        shared_state,
+                        title=title,
+                        case=NotificationType.SOLVED,
+                        details=notification,
                     )
                     log_msg = f"Download successfully started for <y>{title}</y>"
                     providers = notification.get("solvers")
@@ -208,7 +212,7 @@ def setup_sponsors_helper_routes(app):
 
             StatsHelper(shared_state).increment_captcha_decryptions_automatic()
 
-            send_notification(shared_state, title=title, case="disabled")
+            send_notification(shared_state, title=title, case=NotificationType.DISABLED)
 
             return f"Package <y>{title}</y> disabled"
 
@@ -292,7 +296,11 @@ def setup_sponsors_helper_routes(app):
                     pass
 
                 if failed:
-                    send_notification(shared_state, title=title, case="failed")
+                    send_notification(
+                        shared_state,
+                        title=title,
+                        case=NotificationType.FAILED,
+                    )
                     return f'Package <y>{title}</y> with ID <y>{package_id}</y> marked as failed!"'
                 else:
                     return f"Package <y>{title}</y> processed."

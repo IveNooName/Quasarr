@@ -12,6 +12,9 @@ from Cryptodome.Random import get_random_bytes
 from Cryptodome.Util.Padding import pad
 
 from quasarr.providers import shared_state
+from quasarr.providers.notifications.notification_types import (
+    get_user_configurable_notification_types,
+)
 from quasarr.search.sources.helpers import get_hostnames
 from quasarr.storage.sqlite_database import DataBase
 
@@ -32,6 +35,16 @@ class Config(object):
         "Hostnames": [(hostname, "secret", "") for hostname in get_hostnames()],
         "FlareSolverr": [
             ("url", "str", ""),
+        ],
+        "Notifications": [
+            ("discord_webhook", "secret", ""),
+            ("telegram_bot_token", "secret", ""),
+            ("telegram_chat_id", "secret", ""),
+            *[
+                (f"{provider}_{notification_type.value}", "bool", "true")
+                for provider in ("discord", "telegram")
+                for notification_type in get_user_configurable_notification_types()
+            ],
         ],
         "AL": [("user", "secret", ""), ("password", "secret", "")],
         "DD": [("user", "secret", ""), ("password", "secret", "")],

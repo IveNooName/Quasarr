@@ -9,13 +9,9 @@ services:
     environment:
       - 'INTERNAL_ADDRESS=http://192.168.1.1:8080'
       - 'EXTERNAL_ADDRESS=https://foo.bar/'
-      - 'DISCORD=https://discord.com/api/webhooks/1234567890/ABCDEFGHIJKLMN'
-      #- 'TELEGRAM_BOT_TOKEN=123456789:ABCdefGHIjklMNOpqrSTUvwxYZ_0123456789a'
-      #- 'TELEGRAM_CHAT_ID=987654321'
       - 'USER=admin'
       - 'PASS=change-me'
       - 'AUTH=form'
-      - 'SILENT=True'
       - 'TZ=Europe/Berlin'
 
   # Optional (sponsor-only): automatic CAPTCHA solving / decryption helper

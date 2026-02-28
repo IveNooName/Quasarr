@@ -11,6 +11,10 @@ from quasarr.providers.notifications._helpers import (
     format_balance,
     format_number,
 )
+from quasarr.providers.notifications.notification_types import (
+    NotificationType,
+    normalize_notification_type,
+)
 
 
 def _build_solved_section(details):
@@ -54,22 +58,22 @@ def _build_text(shared_state, title, case, details, source):
     """Build an HTML-formatted Telegram message for the given notification case."""
     parts = [f"<b>{title}</b>"]
 
-    if case == "unprotected":
+    if case == NotificationType.UNPROTECTED:
         parts.append("No CAPTCHA required. Links were added directly!")
-    elif case == "solved":
+    elif case == NotificationType.SOLVED:
         parts.append("CAPTCHA solved by SponsorsHelper!")
         parts.extend(_build_solved_section(details))
-    elif case == "failed":
+    elif case == NotificationType.FAILED:
         parts.append(
             "SponsorsHelper failed to solve the CAPTCHA! "
             "Package marked as failed for deletion."
         )
-    elif case == "disabled":
+    elif case == NotificationType.DISABLED:
         parts.append(
             "SponsorsHelper failed to solve the CAPTCHA! "
             "Please solve it manually to proceed."
         )
-    elif case == "captcha":
+    elif case == NotificationType.CAPTCHA:
         parts.append("Download will proceed, once the CAPTCHA has been solved.")
         captcha_url = f"{shared_state.values['external_address']}/captcha"
         parts.append(
@@ -81,13 +85,15 @@ def _build_text(shared_state, title, case, details, source):
                 f'<b>SponsorsHelper</b> <a href="{SPONSORS_HELPER_URL}">'
                 "Sponsors get automated CAPTCHA solutions!</a>"
             )
-    elif case == "quasarr_update":
+    elif case == NotificationType.QUASARR_UPDATE:
         parts.append(f"Please update to {details['version']} as soon as possible!")
         if details:
             parts.append(
                 f'<b>Release notes at: </b> <a href="{details["link"]}">'
                 f"GitHub.com: rix1337/Quasarr/{details['version']}</a>"
             )
+    elif case == NotificationType.TEST:
+        parts.append("This is a test notification from Quasarr UI configuration.")
     else:
         info(f"Unknown notification case: {case}")
         return None
@@ -100,22 +106,19 @@ def _build_text(shared_state, title, case, details, source):
 
 def send(shared_state, title, case, details=None, source=None, image_url=None):
     """Build and send a Telegram notification. Returns True on success."""
-    from quasarr.providers.notifications import silent
+    notification_type = normalize_notification_type(case)
+    if notification_type is None:
+        info(f"Unknown notification case: {case}")
+        return False
 
     bot_token = shared_state.values.get("telegram_bot_token")
     chat_id = shared_state.values.get("telegram_chat_id")
     if not bot_token or not chat_id:
         return False
 
-    text = _build_text(shared_state, title, case, details, source)
+    text = _build_text(shared_state, title, notification_type, details, source)
     if text is None:
         return False
-
-    disable_notification = silent and case not in [
-        "failed",
-        "quasarr_update",
-        "disabled",
-    ]
 
     if image_url and len(text) <= 1024:
         api_url = f"https://api.telegram.org/bot{bot_token}/sendPhoto"
@@ -124,7 +127,6 @@ def send(shared_state, title, case, details=None, source=None, image_url=None):
             "photo": image_url,
             "caption": text,
             "parse_mode": "HTML",
-            "disable_notification": disable_notification,
         }
     else:
         api_url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
@@ -133,7 +135,6 @@ def send(shared_state, title, case, details=None, source=None, image_url=None):
             "text": text,
             "parse_mode": "HTML",
             "disable_web_page_preview": not bool(image_url),
-            "disable_notification": disable_notification,
         }
 
     response = requests.post(api_url, json=params)

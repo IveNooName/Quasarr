@@ -2,6 +2,8 @@
 # Quasarr
 # Project by https://github.com/rix1337
 
+import json
+
 from bottle import Bottle
 
 import quasarr.providers.html_images as images
@@ -19,6 +21,10 @@ from quasarr.providers.html_templates import (
     render_button,
     render_centered_html,
     render_success,
+)
+from quasarr.providers.notifications.notification_types import (
+    get_notification_type_label,
+    get_user_configurable_notification_types,
 )
 from quasarr.providers.web_server import Server
 from quasarr.search.sources.helpers import get_login_required_hostnames
@@ -152,6 +158,47 @@ def get_api(shared_state_dict, shared_state_lock):
             </div>
             """
 
+        notification_cases = [
+            (
+                notification_type.value,
+                get_notification_type_label(notification_type),
+            )
+            for notification_type in get_user_configurable_notification_types()
+        ]
+
+        notification_settings = shared_state.values.get("notification_settings", {})
+        notification_toggles = notification_settings.get("toggles")
+        if not isinstance(notification_toggles, dict):
+            notification_toggles = {"discord": {}, "telegram": {}}
+
+        discord_webhook = shared_state.values.get("discord") or ""
+        telegram_bot_token = shared_state.values.get("telegram_bot_token") or ""
+        telegram_chat_id = shared_state.values.get("telegram_chat_id") or ""
+
+        notification_cases_json = json.dumps(
+            [case_key for case_key, _ in notification_cases]
+        )
+
+        def render_notification_toggle_rows(provider):
+            provider_toggles = notification_toggles.get(provider, {})
+            rows = []
+            for case_key, case_label in notification_cases:
+                checked = "checked" if provider_toggles.get(case_key, True) else ""
+                rows.append(
+                    f"""
+                    <tr>
+                        <td>{case_label}</td>
+                        <td class="toggle-cell"><input type="checkbox" id="notif-{provider}-{case_key}" {checked}></td>
+                    </tr>
+                    """
+                )
+            return (
+                '<table class="notification-toggle-table">' + "".join(rows) + "</table>"
+            )
+
+        discord_toggle_rows = render_notification_toggle_rows("discord")
+        telegram_toggle_rows = render_notification_toggle_rows("telegram")
+
         info = f"""
         <h1><img src="{images.logo}" type="image/webp" alt="Quasarr logo" class="logo"/>Quasarr</h1>
 
@@ -264,6 +311,56 @@ def get_api(shared_state_dict, shared_state_lock):
                             </div>
                         </div>
                     </form>
+                </div>
+            </details>
+        </div>
+
+        <div class="section">
+            <details id="notificationsDetails">
+                <summary id="notificationsSummary"><img src="{images.notifications}" type="image/webp" alt="Notifications logo" class="inline-icon"/> Notifications Configuration</summary>
+                <div class="api-settings">
+                    <p class="api-hint">
+                        Configure provider credentials, choose notification types per provider, and send a test message.
+                    </p>
+
+                    <div class="notification-provider-card">
+                        <h4><img src="{images.discord}" type="image/webp" alt="Discord logo" class="inline-icon"/> Discord</h4>
+                        <div class="input-group">
+                            <label for="notification-discord-webhook">Webhook URL</label>
+                            <div class="input-row">
+                                <input type="text" id="notification-discord-webhook" placeholder="https://discord.com/api/webhooks/..." value="{discord_webhook}">
+                            </div>
+                        </div>
+                        <div class="notification-toggle-list">
+                            {discord_toggle_rows}
+                        </div>
+                        <div id="notification-discord-status" class="notification-status"></div>
+                        <p>{render_button("Send Discord Test", "secondary", {"onclick": "sendNotificationTest('discord')", "type": "button"})}</p>
+                    </div>
+
+                    <div class="notification-provider-card">
+                        <h4><img src="{images.telegram}" type="image/webp" alt="Telegram logo" class="inline-icon"/> Telegram</h4>
+                        <div class="input-group">
+                            <label for="notification-telegram-token">Bot Token</label>
+                            <div class="input-row">
+                                <input type="text" id="notification-telegram-token" placeholder="123456789:..." value="{telegram_bot_token}">
+                            </div>
+                        </div>
+                        <div class="input-group">
+                            <label for="notification-telegram-chat-id">Chat ID</label>
+                            <div class="input-row">
+                                <input type="text" id="notification-telegram-chat-id" placeholder="987654321 or @channel" value="{telegram_chat_id}">
+                            </div>
+                        </div>
+                        <div class="notification-toggle-list">
+                            {telegram_toggle_rows}
+                        </div>
+                        <div id="notification-telegram-status" class="notification-status"></div>
+                        <p>{render_button("Send Telegram Test", "secondary", {"onclick": "sendNotificationTest('telegram')", "type": "button"})}</p>
+                    </div>
+
+                    <div id="notification-save-status" class="notification-status"></div>
+                    <p>{render_button("Save Notification Settings", "primary", {"onclick": "saveNotificationSettings()", "type": "button", "id": "notificationSaveBtn"})}</p>
                 </div>
             </details>
         </div>
@@ -390,6 +487,17 @@ def get_api(shared_state_dict, shared_state_lock):
                 min-width: 0;
                 margin: 0;
             }}
+            .input-row select {{
+                flex: 1;
+                padding: 8px 12px;
+                border: 1px solid var(--input-border, #ced4da);
+                border-radius: 4px;
+                font-size: 0.9em;
+                background: var(--input-bg, #e9ecef);
+                color: var(--fg-color, #212529);
+                min-width: 0;
+                margin: 0;
+            }}
             .input-row button {{
                 padding: 8px 16px;
                 border: none;
@@ -415,6 +523,44 @@ def get_api(shared_state_dict, shared_state_lock):
             }}
             #toggleKey:hover {{
                 background: var(--btn-secondary-hover, #545b62);
+            }}
+
+            .notification-provider-card {{
+                border: 1px solid var(--card-border, #dee2e6);
+                border-radius: 8px;
+                padding: 12px;
+                margin-bottom: 14px;
+                background: var(--card-bg, #f8f9fa);
+            }}
+            .notification-provider-card h4 {{
+                margin: 0 0 10px 0;
+                font-size: 1em;
+                display: flex;
+                align-items: center;
+                gap: 8px;
+            }}
+            .notification-toggle-list {{
+                margin-top: 6px;
+                margin-bottom: 10px;
+            }}
+            .notification-toggle-table {{
+                width: 100%;
+                border-collapse: collapse;
+                font-size: 0.9em;
+            }}
+            .notification-toggle-table td {{
+                padding: 4px 0;
+                text-align: left;
+            }}
+            .notification-toggle-table .toggle-cell {{
+                width: 30px;
+                text-align: right;
+            }}
+            .notification-status {{
+                min-height: 1.2em;
+                font-size: 0.9em;
+                margin-bottom: 8px;
+                text-align: left;
             }}
 
             .help-link {{
@@ -638,6 +784,120 @@ def get_api(shared_state_dict, shared_state_lock):
                     statusDiv.innerHTML = '❌ Error: ' + error.message;
                     statusDiv.style.color = 'var(--status-error-color, #c62828)';
                 }});
+            }}
+
+            var notificationCases = {notification_cases_json};
+
+            function setNotificationStatus(elementId, message, isSuccess) {{
+                var statusElement = document.getElementById(elementId);
+                if (!statusElement) {{
+                    return;
+                }}
+
+                statusElement.innerHTML = message || '';
+                if (!message) {{
+                    statusElement.style.color = '';
+                    return;
+                }}
+
+                statusElement.style.color = isSuccess
+                    ? 'var(--status-success-color, #2e7d32)'
+                    : 'var(--status-error-color, #c62828)';
+            }}
+
+            function collectNotificationPayload() {{
+                var payload = {{
+                    discord_webhook: document.getElementById('notification-discord-webhook').value.trim(),
+                    telegram_bot_token: document.getElementById('notification-telegram-token').value.trim(),
+                    telegram_chat_id: document.getElementById('notification-telegram-chat-id').value.trim(),
+                    toggles: {{}}
+                }};
+
+                ['discord', 'telegram'].forEach(function(provider) {{
+                    payload.toggles[provider] = {{}};
+                    notificationCases.forEach(function(notificationCase) {{
+                        var input = document.getElementById('notif-' + provider + '-' + notificationCase);
+                        payload.toggles[provider][notificationCase] = !!(input && input.checked);
+                    }});
+                }});
+
+                return payload;
+            }}
+
+            async function persistNotificationSettings(showSuccessMessage) {{
+                var saveButton = document.getElementById('notificationSaveBtn');
+                setNotificationStatus('notification-save-status', 'Saving notification settings...', true);
+
+                if (saveButton) {{
+                    saveButton.disabled = true;
+                    saveButton.textContent = 'Saving...';
+                }}
+
+                try {{
+                    var response = await fetch('/api/notifications/settings', {{
+                        method: 'POST',
+                        headers: {{ 'Content-Type': 'application/json' }},
+                        body: JSON.stringify(collectNotificationPayload())
+                    }});
+                    var data = await response.json();
+
+                    if (!response.ok || !data.success) {{
+                        throw new Error(data.message || 'Failed to save notification settings');
+                    }}
+
+                    if (showSuccessMessage) {{
+                        setNotificationStatus('notification-save-status', '✅ ' + data.message, true);
+                    }} else {{
+                        setNotificationStatus('notification-save-status', '', true);
+                    }}
+
+                    return {{ success: true, data: data }};
+                }} catch (error) {{
+                    setNotificationStatus('notification-save-status', '❌ ' + error.message, false);
+                    return {{ success: false, error: error.message }};
+                }} finally {{
+                    if (saveButton) {{
+                        saveButton.disabled = false;
+                        saveButton.textContent = 'Save Notification Settings';
+                    }}
+                }}
+            }}
+
+            async function saveNotificationSettings() {{
+                await persistNotificationSettings(true);
+            }}
+
+            async function sendNotificationTest(provider) {{
+                var statusId = provider === 'discord'
+                    ? 'notification-discord-status'
+                    : 'notification-telegram-status';
+
+                setNotificationStatus(statusId, 'Saving settings before test...', true);
+
+                var saveResult = await persistNotificationSettings(false);
+                if (!saveResult.success) {{
+                    setNotificationStatus(statusId, '❌ Save failed. Fix settings and retry.', false);
+                    return;
+                }}
+
+                setNotificationStatus(statusId, 'Sending test message...', true);
+
+                try {{
+                    var response = await fetch('/api/notifications/test', {{
+                        method: 'POST',
+                        headers: {{ 'Content-Type': 'application/json' }},
+                        body: JSON.stringify({{ provider: provider }})
+                    }});
+                    var data = await response.json();
+
+                    if (!response.ok || !data.success) {{
+                        throw new Error(data.message || 'Failed to send test message');
+                    }}
+
+                    setNotificationStatus(statusId, '✅ ' + data.message, true);
+                }} catch (error) {{
+                    setNotificationStatus(statusId, '❌ ' + error.message, false);
+                }}
             }}
         </script>
         """

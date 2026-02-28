@@ -2,14 +2,24 @@
 # Quasarr
 # Project by https://github.com/rix1337
 
-import os
-
 from quasarr.providers.log import info
 from quasarr.providers.notifications._helpers import resolve_poster_url
+from quasarr.providers.notifications.notification_types import (
+    NotificationType,
+    normalize_notification_type,
+)
 
-silent_env = os.getenv("SILENT", "")
-silent = bool(silent_env)
-silent_max = silent_env.lower() == "max"
+
+def _provider_case_enabled(shared_state, provider, notification_type):
+    toggles = shared_state.values.get("notification_toggles")
+    if not isinstance(toggles, dict):
+        return True
+
+    provider_toggles = toggles.get(provider)
+    if not isinstance(provider_toggles, dict):
+        return True
+
+    return bool(provider_toggles.get(notification_type.value, True))
 
 
 def send_notification(
@@ -30,6 +40,11 @@ def send_notification(
     """
     from quasarr.providers.notifications import discord, telegram
 
+    notification_type = normalize_notification_type(case)
+    if notification_type is None:
+        info(f"Unknown notification case: {case}")
+        return False
+
     has_discord = bool(shared_state.values.get("discord"))
     has_telegram = bool(shared_state.values.get("telegram_bot_token")) and bool(
         shared_state.values.get("telegram_chat_id")
@@ -38,23 +53,21 @@ def send_notification(
     if not has_discord and not has_telegram:
         return False
 
-    # SILENT=MAX blocks all messages except explicit failure cases.
-    if silent_max and case not in ["failed", "disabled"]:
-        return True
-
     # Resolve poster image once for all providers.
     image_url = None
-    if case in ("unprotected", "captcha"):
+    if notification_type in (NotificationType.UNPROTECTED, NotificationType.CAPTCHA):
         image_url = resolve_poster_url(shared_state, title, imdb_id)
 
     any_success = False
 
-    if has_discord:
+    if has_discord and _provider_case_enabled(
+        shared_state, "discord", notification_type
+    ):
         try:
             if discord.send(
                 shared_state,
                 title,
-                case,
+                notification_type,
                 details=details,
                 source=source,
                 image_url=image_url,
@@ -63,12 +76,14 @@ def send_notification(
         except Exception as e:
             info(f"Discord notification error: {e}")
 
-    if has_telegram:
+    if has_telegram and _provider_case_enabled(
+        shared_state, "telegram", notification_type
+    ):
         try:
             if telegram.send(
                 shared_state,
                 title,
-                case,
+                notification_type,
                 details=details,
                 source=source,
                 image_url=image_url,

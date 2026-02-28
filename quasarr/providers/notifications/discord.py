@@ -6,7 +6,6 @@ import json
 
 import requests
 
-from quasarr.constants import SUPPRESS_NOTIFICATIONS
 from quasarr.providers.log import info
 from quasarr.providers.notifications._helpers import (
     QUASARR_AVATAR,
@@ -14,6 +13,10 @@ from quasarr.providers.notifications._helpers import (
     build_solved_data,
     format_balance,
     format_number,
+)
+from quasarr.providers.notifications.notification_types import (
+    NotificationType,
+    normalize_notification_type,
 )
 
 
@@ -59,25 +62,25 @@ def _build_solved_fields(details):
 
 def _build_embed(shared_state, title, case, details, source, image_url):
     """Build a Discord embed dict for the given notification case."""
-    if case == "unprotected":
+    if case == NotificationType.UNPROTECTED:
         description = "No CAPTCHA required. Links were added directly!"
         fields = None
-    elif case == "solved":
+    elif case == NotificationType.SOLVED:
         description = "CAPTCHA solved by SponsorsHelper!"
         fields = _build_solved_fields(details)
-    elif case == "failed":
+    elif case == NotificationType.FAILED:
         description = (
             "SponsorsHelper failed to solve the CAPTCHA! "
             "Package marked as failed for deletion."
         )
         fields = None
-    elif case == "disabled":
+    elif case == NotificationType.DISABLED:
         description = (
             "SponsorsHelper failed to solve the CAPTCHA! "
             "Please solve it manually to proceed."
         )
         fields = None
-    elif case == "captcha":
+    elif case == NotificationType.CAPTCHA:
         description = "Download will proceed, once the CAPTCHA has been solved."
         captcha_url = f"{shared_state.values['external_address']}/captcha"
         fields = [
@@ -96,7 +99,7 @@ def _build_embed(shared_state, title, case, details, source, image_url):
                     ),
                 }
             )
-    elif case == "quasarr_update":
+    elif case == NotificationType.QUASARR_UPDATE:
         description = f"Please update to {details['version']} as soon as possible!"
         if details:
             fields = [
@@ -110,6 +113,9 @@ def _build_embed(shared_state, title, case, details, source, image_url):
             ]
         else:
             fields = None
+    elif case == NotificationType.TEST:
+        description = "This is a test notification from Quasarr UI configuration."
+        fields = None
     else:
         info(f"Unknown notification case: {case}")
         return None
@@ -133,7 +139,7 @@ def _build_embed(shared_state, title, case, details, source, image_url):
         poster_object = {"url": image_url}
         embed["thumbnail"] = poster_object
         embed["image"] = poster_object
-    elif case == "quasarr_update":
+    elif case == NotificationType.QUASARR_UPDATE:
         embed["thumbnail"] = {"url": QUASARR_AVATAR}
 
     return embed
@@ -141,13 +147,18 @@ def _build_embed(shared_state, title, case, details, source, image_url):
 
 def send(shared_state, title, case, details=None, source=None, image_url=None):
     """Build and send a Discord webhook notification. Returns True on success."""
-    from quasarr.providers.notifications import silent
+    notification_type = normalize_notification_type(case)
+    if notification_type is None:
+        info(f"Unknown notification case: {case}")
+        return False
 
     webhook_url = shared_state.values.get("discord")
     if not webhook_url:
         return False
 
-    embed = _build_embed(shared_state, title, case, details, source, image_url)
+    embed = _build_embed(
+        shared_state, title, notification_type, details, source, image_url
+    )
     if embed is None:
         return False
 
@@ -156,9 +167,6 @@ def send(shared_state, title, case, details=None, source=None, image_url=None):
         "avatar_url": QUASARR_AVATAR,
         "embeds": [embed],
     }
-
-    if silent and case not in ["failed", "quasarr_update", "disabled"]:
-        data["flags"] = SUPPRESS_NOTIFICATIONS
 
     response = requests.post(
         webhook_url,

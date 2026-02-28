@@ -15,6 +15,7 @@ from quasarr.constants import (
     RECOMMENDED_HOSTERS,
     SHARE_HOSTERS,
 )
+from quasarr.providers.auth import require_browser_auth
 from quasarr.providers.html_templates import render_button, render_form
 from quasarr.providers.log import info
 from quasarr.providers.utils import (
@@ -42,12 +43,15 @@ from quasarr.storage.setup import (
     clear_skip_login,
     delete_skip_flaresolverr_preference,
     get_flaresolverr_status_data,
+    get_notification_settings_data,
     get_skip_login,
     hostname_form_html,
     import_hostnames_from_url,
     save_flaresolverr_url,
     save_hostnames,
     save_jdownloader_settings,
+    save_notification_settings,
+    send_notification_test,
     verify_jdownloader_credentials,
 )
 
@@ -134,6 +138,21 @@ def setup_config(app, shared_state):
     @app.post("/api/jdownloader/save")
     def save_jdownloader_api():
         return save_jdownloader_settings(shared_state, is_setup=False)
+
+    @app.get("/api/notifications/settings")
+    @require_browser_auth
+    def get_notification_settings_api():
+        return get_notification_settings_data(shared_state)
+
+    @app.post("/api/notifications/settings")
+    @require_browser_auth
+    def save_notification_settings_api():
+        return save_notification_settings(shared_state)
+
+    @app.post("/api/notifications/test")
+    @require_browser_auth
+    def send_notification_test_api():
+        return send_notification_test(shared_state)
 
     @app.get("/categories")
     def categories_ui():
