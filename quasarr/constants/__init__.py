@@ -132,10 +132,12 @@ HOSTERS = [
     ("Mega", False),  # Active, but functions differently (cloud drive vs. OCH).
     ("AkiraBox", False),  # Common mirror on anime-focused releases.
     ("BuzzHeavier", False),  # Common mirror on anime-focused releases.
+    ("ClickNupload", False),  # Common mirror on RM releases.
     ("GoFile", False),  # Common mirror on anime-focused releases.
     ("KrakenFiles", False),  # Common mirror on anime-focused releases.
     ("MdiaLoad", False),  # Common mirror on anime-focused releases.
     ("MultiUp", False),  # Common mirror on anime-focused releases.
+    ("RapidRAR", False),  # Common mirror on RM releases.
     ("frdl", False),  # Rarely used in some forums
 ]
 
