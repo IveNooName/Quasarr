@@ -8,10 +8,12 @@ import time
 import requests
 
 from quasarr.constants import (
+    FEED_REQUEST_TIMEOUT_SECONDS,
     SEARCH_CAT_BOOKS,
     SEARCH_CAT_MOVIES,
     SEARCH_CAT_MUSIC,
     SEARCH_CAT_SHOWS,
+    SEARCH_REQUEST_TIMEOUT_SECONDS,
 )
 from quasarr.providers import shared_state
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
@@ -68,7 +70,7 @@ class Source(AbstractSearchSource):
         }
 
         try:
-            r = requests.get(url, headers, timeout=30)
+            r = requests.get(url, headers, timeout=FEED_REQUEST_TIMEOUT_SECONDS)
             r.raise_for_status()
             feed = r.json()
         except Exception as e:
@@ -191,7 +193,7 @@ class Source(AbstractSearchSource):
         }
 
         try:
-            r = requests.get(url, headers, timeout=10)
+            r = requests.get(url, headers, timeout=SEARCH_REQUEST_TIMEOUT_SECONDS)
             r.raise_for_status()
             feed = r.json()
         except Exception as e:

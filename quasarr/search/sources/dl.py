@@ -11,11 +11,13 @@ from bs4 import BeautifulSoup
 
 from quasarr.constants import (
     CODEC_REGEX,
+    FEED_REQUEST_TIMEOUT_SECONDS,
     RESOLUTION_REGEX,
     SEARCH_CAT_BOOKS,
     SEARCH_CAT_MOVIES,
     SEARCH_CAT_MUSIC,
     SEARCH_CAT_SHOWS,
+    SEARCH_REQUEST_TIMEOUT_SECONDS,
     XXX_REGEX,
 )
 from quasarr.providers import shared_state
@@ -86,7 +88,7 @@ class Source(AbstractSearchSource):
             forum_url = (
                 f"https://www.{host}/forums/{forum}/?order=post_date&direction=desc"
             )
-            r = sess.get(forum_url, timeout=30)
+            r = sess.get(forum_url, timeout=FEED_REQUEST_TIMEOUT_SECONDS)
             r.raise_for_status()
 
             soup = BeautifulSoup(r.content, "html.parser")
@@ -210,7 +212,7 @@ class Source(AbstractSearchSource):
                 method="GET",
                 target_url=search_url,
                 get_params=search_params,
-                timeout=10,
+                timeout=SEARCH_REQUEST_TIMEOUT_SECONDS,
             )
 
             if search_response.status_code != 200:

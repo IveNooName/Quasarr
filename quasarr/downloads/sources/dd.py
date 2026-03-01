@@ -2,6 +2,7 @@
 # Quasarr
 # Project by https://github.com/rix1337
 
+from quasarr.constants import DOWNLOAD_REQUEST_TIMEOUT_SECONDS
 from quasarr.downloads.sources.helpers.abstract_source import AbstractDownloadSource
 from quasarr.providers.hostname_issues import mark_hostname_issue
 from quasarr.providers.log import debug, info
@@ -49,7 +50,11 @@ class Source(AbstractDownloadSource):
             for page in range(0, 100, 20):
                 api_url = f"https://{dd}/index/search/keyword/{title}/qualities/{','.join(qualities)}/from/{page}/search"
 
-                r = dd_session.get(api_url, headers=headers, timeout=10)
+                r = dd_session.get(
+                    api_url,
+                    headers=headers,
+                    timeout=DOWNLOAD_REQUEST_TIMEOUT_SECONDS,
+                )
                 r.raise_for_status()
                 releases_on_page = r.json()
                 if releases_on_page:

@@ -11,9 +11,11 @@ import requests
 from bs4 import BeautifulSoup
 
 from quasarr.constants import (
+    FEED_REQUEST_TIMEOUT_SECONDS,
     SEARCH_CAT_MOVIES,
     SEARCH_CAT_SHOWS,
     SEARCH_CAT_SHOWS_ANIME,
+    SEARCH_REQUEST_TIMEOUT_SECONDS,
 )
 from quasarr.providers import shared_state
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
@@ -84,10 +86,10 @@ class Source(AbstractSearchSource):
 
         if not source_search:
             search_type = "feed"
-            timeout = 30
+            timeout = FEED_REQUEST_TIMEOUT_SECONDS
         else:
             search_type = "search"
-            timeout = 10
+            timeout = SEARCH_REQUEST_TIMEOUT_SECONDS
 
         if season:
             source_search += f" S{int(season):02d}"
@@ -166,7 +168,11 @@ class Source(AbstractSearchSource):
 
                 release_imdb_id = None
                 try:
-                    r = requests.get(source, headers=headers, timeout=10)
+                    r = requests.get(
+                        source,
+                        headers=headers,
+                        timeout=SEARCH_REQUEST_TIMEOUT_SECONDS,
+                    )
                     soup = BeautifulSoup(r.content, "html.parser")
                 except Exception as e:
                     mark_hostname_issue(

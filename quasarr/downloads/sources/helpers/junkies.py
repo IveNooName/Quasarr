@@ -8,6 +8,8 @@ from urllib.parse import unquote, urlparse
 import requests
 from bs4 import BeautifulSoup
 
+from quasarr.constants import DOWNLOAD_REQUEST_TIMEOUT_SECONDS
+
 
 def _normalize_mirror_name(mirror_name):
     normalized = str(mirror_name).lower().strip()
@@ -47,7 +49,11 @@ def _fetch_release_hosters(url, user_agent, release_title):
     base_url = f"{parsed.scheme}://{parsed.netloc}"
     headers = {"User-Agent": user_agent}
 
-    page_response = requests.get(url, headers=headers, timeout=15)
+    page_response = requests.get(
+        url,
+        headers=headers,
+        timeout=DOWNLOAD_REQUEST_TIMEOUT_SECONDS,
+    )
     page_response.raise_for_status()
     soup = BeautifulSoup(page_response.text, "html.parser")
 
@@ -66,7 +72,7 @@ def _fetch_release_hosters(url, user_agent, release_title):
     api_response = requests.get(
         f"{base_url}/api/media/{media_id}/releases",
         headers=headers,
-        timeout=15,
+        timeout=DOWNLOAD_REQUEST_TIMEOUT_SECONDS,
     )
     api_response.raise_for_status()
     release_map = api_response.json()

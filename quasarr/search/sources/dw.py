@@ -11,9 +11,11 @@ from bs4 import BeautifulSoup
 
 from quasarr.constants import (
     ENGLISH_MONTHS,
+    FEED_REQUEST_TIMEOUT_SECONDS,
     GERMAN_MONTHS,
     SEARCH_CAT_MOVIES,
     SEARCH_CAT_SHOWS,
+    SEARCH_REQUEST_TIMEOUT_SECONDS,
 )
 from quasarr.providers import shared_state
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
@@ -58,7 +60,7 @@ class Source(AbstractSearchSource):
         }
 
         try:
-            r = requests.get(url, headers=headers, timeout=30)
+            r = requests.get(url, headers=headers, timeout=FEED_REQUEST_TIMEOUT_SECONDS)
             r.raise_for_status()
             feed = BeautifulSoup(r.content, "html.parser")
             articles = feed.find_all("h4")
@@ -157,7 +159,11 @@ class Source(AbstractSearchSource):
         }
 
         try:
-            r = requests.get(url, headers=headers, timeout=10)
+            r = requests.get(
+                url,
+                headers=headers,
+                timeout=SEARCH_REQUEST_TIMEOUT_SECONDS,
+            )
             r.raise_for_status()
             search = BeautifulSoup(r.content, "html.parser")
             results = search.find_all("h4")

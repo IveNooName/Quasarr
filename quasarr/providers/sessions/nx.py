@@ -7,6 +7,7 @@ import pickle
 
 import requests
 
+from quasarr.constants import SESSION_REQUEST_TIMEOUT_SECONDS
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
 from quasarr.providers.log import debug, info
 from quasarr.providers.utils import is_site_usable
@@ -34,7 +35,7 @@ def create_and_persist_session(shared_state):
         cookies=cookies,
         headers=headers,
         json=json_data,
-        timeout=10,
+        timeout=SESSION_REQUEST_TIMEOUT_SECONDS,
     )
     r.raise_for_status()
 

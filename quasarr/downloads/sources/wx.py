@@ -6,6 +6,7 @@ import re
 
 import requests
 
+from quasarr.constants import DOWNLOAD_REQUEST_TIMEOUT_SECONDS
 from quasarr.downloads.sources.helpers.abstract_source import AbstractDownloadSource
 from quasarr.providers.hostname_issues import mark_hostname_issue
 from quasarr.providers.log import debug, info
@@ -33,7 +34,11 @@ class Source(AbstractDownloadSource):
             session = requests.Session()
 
             # First, load the page to establish session cookies
-            r = session.get(url, headers=headers, timeout=30)
+            r = session.get(
+                url,
+                headers=headers,
+                timeout=DOWNLOAD_REQUEST_TIMEOUT_SECONDS,
+            )
             r.raise_for_status()
 
             # Extract slug from URL
@@ -51,7 +56,11 @@ class Source(AbstractDownloadSource):
             }
 
             debug(f"Fetching API data from: {api_url}")
-            api_r = session.get(api_url, headers=api_headers, timeout=30)
+            api_r = session.get(
+                api_url,
+                headers=api_headers,
+                timeout=DOWNLOAD_REQUEST_TIMEOUT_SECONDS,
+            )
             api_r.raise_for_status()
 
             data = api_r.json()

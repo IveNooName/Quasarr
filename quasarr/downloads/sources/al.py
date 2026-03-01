@@ -6,15 +6,29 @@ import base64
 import json
 import re
 import time
-from dataclasses import dataclass
 from typing import List, Optional
 from urllib.parse import urlparse
 
 from bs4 import BeautifulSoup
 
-from quasarr.constants import LANGUAGE_TO_ALPHA2, SUBTITLE_TOKEN_BY_ALPHA2
+from quasarr.constants import DOWNLOAD_REQUEST_TIMEOUT_SECONDS
 from quasarr.downloads.linkcrypters.al import decrypt_content, solve_captcha
 from quasarr.downloads.sources.helpers.abstract_source import AbstractDownloadSource
+from quasarr.downloads.sources.helpers.anime_title import (
+    ReleaseInfo,
+)
+from quasarr.downloads.sources.helpers.anime_title import (
+    guess_release_title as _shared_guess_release_title,
+)
+from quasarr.downloads.sources.helpers.anime_title import (
+    inject_subtitle_tokens_in_title as _shared_inject_subtitle_tokens_in_title,
+)
+from quasarr.downloads.sources.helpers.anime_title import (
+    subtitle_lang_to_alpha2 as _shared_subtitle_lang_to_alpha2,
+)
+from quasarr.downloads.sources.helpers.anime_title import (
+    subtitle_tokens as _shared_subtitle_tokens,
+)
 from quasarr.providers.hostname_issues import mark_hostname_issue
 from quasarr.providers.log import debug, info, trace
 from quasarr.providers.sessions.al import (
@@ -25,7 +39,7 @@ from quasarr.providers.sessions.al import (
     unwrap_flaresolverr_body,
 )
 from quasarr.providers.statistics import StatsHelper
-from quasarr.providers.utils import is_flaresolverr_available, sanitize_title
+from quasarr.providers.utils import is_flaresolverr_available
 
 
 class Source(AbstractDownloadSource):
@@ -57,7 +71,12 @@ class Source(AbstractDownloadSource):
             mark_hostname_issue(Source.initials, "download", "Session error")
             return {}
 
-        details_page = fetch_via_flaresolverr(shared_state, "GET", url, timeout=30)
+        details_page = fetch_via_flaresolverr(
+            shared_state,
+            "GET",
+            url,
+            timeout=DOWNLOAD_REQUEST_TIMEOUT_SECONDS,
+        )
         details_html = details_page.get("text", "")
         if not details_html:
             info(f"Failed to load details page for {title} at {url}")
@@ -95,7 +114,7 @@ class Source(AbstractDownloadSource):
                 method="POST",
                 target_url=post_url,
                 post_data=payload,
-                timeout=30,
+                timeout=DOWNLOAD_REQUEST_TIMEOUT_SECONDS,
             )
 
             status = result.get("status_code")
@@ -155,7 +174,7 @@ class Source(AbstractDownloadSource):
                                     method="POST",
                                     target_url=post_url,
                                     post_data=payload,
-                                    timeout=30,
+                                    timeout=DOWNLOAD_REQUEST_TIMEOUT_SECONDS,
                                 )
                                 try:
                                     response_json = check_solution.get("json", {})
@@ -252,22 +271,6 @@ class Source(AbstractDownloadSource):
         links_with_mirrors = [[url, _derive_mirror(url)] for url in links]
 
         return {"links": links_with_mirrors, "password": f"www.{al}", "title": title}
-
-
-@dataclass
-class ReleaseInfo:
-    release_title: Optional[str]
-    audio_langs: List[str]
-    subtitle_langs: List[str]
-    resolution: str
-    audio: str
-    video: str
-    source: str
-    release_group: str
-    season_part: Optional[int]
-    season: Optional[int]
-    episode_min: Optional[int]
-    episode_max: Optional[int]
 
 
 def _roman_to_int(r: str) -> int:
@@ -457,92 +460,15 @@ def _extract_season_number_from_title(page_title, release_type, release_title=""
 
 
 def _subtitle_lang_to_alpha2(lang: str) -> Optional[str]:
-    if not lang:
-        return None
-    normalized = re.sub(r"[^a-z]", "", lang.lower())
-    if not normalized:
-        return None
-    mapped = LANGUAGE_TO_ALPHA2.get(normalized)
-    if mapped:
-        return mapped
-    if len(normalized) == 2:
-        return normalized.upper()
-    return None
+    return _shared_subtitle_lang_to_alpha2(lang)
 
 
 def _subtitle_tokens(subtitle_langs: List[str]) -> List[str]:
-    tokens: List[str] = []
-    for lang in subtitle_langs:
-        code = _subtitle_lang_to_alpha2(lang)
-        token = SUBTITLE_TOKEN_BY_ALPHA2.get(code) if code else None
-        if token and token not in tokens:
-            tokens.append(token)
-    return tokens
+    return _shared_subtitle_tokens(subtitle_langs)
 
 
 def _inject_subtitle_tokens_in_title(title: str, subtitle_langs: List[str]) -> str:
-    """
-    Canonical subtitle marker format for AL titles:
-    - `GerSub`, `EngSub`, `JapSub`
-    """
-    has_group = re.search(r"-[^.\s]+$", title)
-    title_without_group = title
-    group_suffix = ""
-    if has_group:
-        title_without_group, _, group = title.rpartition("-")
-        group_suffix = f"-{group}"
-
-    tokens = [t for t in title_without_group.split(".") if t]
-
-    subtitle_token_by_lower = {
-        token.lower(): token for token in SUBTITLE_TOKEN_BY_ALPHA2.values()
-    }
-    existing_subtitle_tokens: List[str] = []
-    first_existing_marker_idx = None
-
-    def add_unique_subtitle_token(token: str, target: List[str]) -> None:
-        canonical = subtitle_token_by_lower.get(token.lower())
-        if canonical and canonical not in target:
-            target.append(canonical)
-
-    # strip already-normalized subtitle tokens first and remember them as fallback.
-    cleaned_tokens: List[str] = []
-    for token in tokens:
-        if token.lower() in subtitle_token_by_lower:
-            if first_existing_marker_idx is None:
-                first_existing_marker_idx = len(cleaned_tokens)
-            add_unique_subtitle_token(token, existing_subtitle_tokens)
-            continue
-        cleaned_tokens.append(token)
-    tokens = cleaned_tokens
-
-    # Remove any residual "Subbed" marker; subtitle markers are explicit language tokens now.
-    first_subbed_idx = None
-    cleaned_tokens = []
-    for token in tokens:
-        if token.lower() == "subbed":
-            if first_subbed_idx is None:
-                first_subbed_idx = len(cleaned_tokens)
-            continue
-        cleaned_tokens.append(token)
-    tokens = cleaned_tokens
-
-    subtitle_tokens = _subtitle_tokens(subtitle_langs)
-    if not subtitle_tokens:
-        subtitle_tokens = existing_subtitle_tokens
-
-    if subtitle_tokens:
-        if first_subbed_idx is not None:
-            insert_at = first_subbed_idx
-        elif first_existing_marker_idx is not None:
-            insert_at = first_existing_marker_idx
-        else:
-            insert_at = len(tokens)
-        insert_at = max(0, min(insert_at, len(tokens)))
-        tokens[insert_at:insert_at] = subtitle_tokens
-
-    normalized_title = ".".join(tokens) + group_suffix
-    return sanitize_title(normalized_title)
+    return _shared_inject_subtitle_tokens_in_title(title, subtitle_langs)
 
 
 def _parse_info_from_feed_entry(block, series_page_title, release_type) -> ReleaseInfo:
@@ -611,6 +537,7 @@ def _parse_info_from_feed_entry(block, series_page_title, release_type) -> Relea
         release_title=None,
         audio_langs=audio_langs,
         subtitle_langs=subtitle_langs,
+        episode_title=None,
         resolution=resolution,
         audio="",
         video=video,
@@ -806,6 +733,7 @@ def _parse_info_from_download_item(
         release_title=release_title,
         audio_langs=audio_langs,
         subtitle_langs=subtitle_langs,
+        episode_title=None,
         resolution=resolution,
         audio=audio,
         video=video,
@@ -819,66 +747,7 @@ def _parse_info_from_download_item(
 
 
 def _guess_title(page_title, release_info: ReleaseInfo) -> str:
-    # remove labels
-    clean_title = page_title.rsplit("(", 1)[0].strip()
-    # Remove season/staffel info
-    pattern = r"(?i)\b(?:Season|Staffel)\s*\.?\s*\d+\b|\bR\d+\b"
-    clean_title = re.sub(pattern, "", clean_title)
-    # If season tokens were removed from "Title - Staffel X", drop leftover trailing separators.
-    clean_title = re.sub(r"\s*[-:]\s*$", "", clean_title).strip()
-
-    # determine season token
-    if release_info.season is not None:
-        season_token = f"S{release_info.season:02d}"
-    else:
-        season_token = ""
-
-    # episode token
-    ep_token = ""
-    if release_info.episode_min is not None:
-        s = release_info.episode_min
-        e = release_info.episode_max if release_info.episode_max is not None else s
-        ep_token = f"E{s:02d}" + (f"-{e:02d}" if e != s else "")
-
-    title_core = clean_title.strip().replace(" ", ".")
-    if season_token:
-        title_core += f".{season_token}{ep_token}"
-    elif ep_token:
-        title_core += f".{ep_token}"
-
-    parts = [title_core]
-
-    part = release_info.season_part
-    if part:
-        part_string = f"Part.{part}"
-        if part_string not in title_core:
-            parts.append(part_string)
-
-    prefix = ""
-    a, su = release_info.audio_langs, release_info.subtitle_langs
-    if len(a) > 2 and "German" in a:
-        prefix = "German.ML"
-    elif len(a) == 2 and "German" in a:
-        prefix = "German.DL"
-    elif len(a) == 1 and "German" in a:
-        prefix = "German"
-    elif a:
-        prefix = a[0]
-    if prefix:
-        parts.append(prefix)
-
-    subtitle_tokens = _subtitle_tokens(su)
-    if subtitle_tokens:
-        parts.extend(subtitle_tokens)
-
-    if release_info.audio:
-        parts.append(release_info.audio)
-
-    parts.extend([release_info.resolution, release_info.source, release_info.video])
-    title = ".".join(parts)
-    if release_info.release_group:
-        title += f"-{release_info.release_group}"
-    return _inject_subtitle_tokens_in_title(title, su)
+    return _shared_guess_release_title(page_title, release_info)
 
 
 def _check_release(shared_state, details_html, release_id, title, episode_in_title):

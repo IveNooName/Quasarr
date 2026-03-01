@@ -12,11 +12,13 @@ from bs4 import BeautifulSoup
 
 from quasarr.constants import (
     CODEC_REGEX,
+    FEED_REQUEST_TIMEOUT_SECONDS,
     IMDB_REGEX,
     MONTHS_MAP,
     RESOLUTION_REGEX,
     SEARCH_CAT_MOVIES,
     SEARCH_CAT_SHOWS,
+    SEARCH_REQUEST_TIMEOUT_SECONDS,
     XXX_REGEX,
 )
 from quasarr.providers import shared_state
@@ -171,7 +173,7 @@ class Source(AbstractSearchSource):
         url = f"https://{mb}/category/{section}/"
         headers = {"User-Agent": shared_state.values["user_agent"]}
         try:
-            r = requests.get(url, headers=headers, timeout=30)
+            r = requests.get(url, headers=headers, timeout=FEED_REQUEST_TIMEOUT_SECONDS)
             r.raise_for_status()
             soup = BeautifulSoup(r.content, "html.parser")
             releases = self._parse_posts(soup, shared_state, password)
@@ -207,7 +209,11 @@ class Source(AbstractSearchSource):
         url = f"https://{mb}/?s={q}&id=20&post_type=post"
         headers = {"User-Agent": shared_state.values["user_agent"]}
         try:
-            r = requests.get(url, headers=headers, timeout=10)
+            r = requests.get(
+                url,
+                headers=headers,
+                timeout=SEARCH_REQUEST_TIMEOUT_SECONDS,
+            )
             r.raise_for_status()
             soup = BeautifulSoup(r.content, "html.parser")
             releases = self._parse_posts(

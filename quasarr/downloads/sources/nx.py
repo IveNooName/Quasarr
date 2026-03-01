@@ -7,6 +7,7 @@ from urllib.parse import urlparse
 
 import requests
 
+from quasarr.constants import DOWNLOAD_REQUEST_TIMEOUT_SECONDS
 from quasarr.downloads.sources.helpers.abstract_source import AbstractDownloadSource
 from quasarr.providers.hostname_issues import mark_hostname_issue
 from quasarr.providers.log import info
@@ -47,7 +48,10 @@ class Source(AbstractDownloadSource):
 
         try:
             r = nx_session.post(
-                payload_url, headers=headers, json=json_data, timeout=10
+                payload_url,
+                headers=headers,
+                json=json_data,
+                timeout=DOWNLOAD_REQUEST_TIMEOUT_SECONDS,
             )
             r.raise_for_status()
 
@@ -156,7 +160,11 @@ def _get_filer_folder_links_via_api(shared_state, url):
         folder_hash = m.group(1)
         api_url = f"{api_base}/api/folder/{folder_hash}"
 
-        r = requests.get(api_url, headers=headers, timeout=10)
+        r = requests.get(
+            api_url,
+            headers=headers,
+            timeout=DOWNLOAD_REQUEST_TIMEOUT_SECONDS,
+        )
         r.raise_for_status()
 
         data = r.json()

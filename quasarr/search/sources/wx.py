@@ -12,9 +12,11 @@ import requests
 from bs4 import BeautifulSoup, XMLParsedAsHTMLWarning
 
 from quasarr.constants import (
+    FEED_REQUEST_TIMEOUT_SECONDS,
     SEARCH_CAT_MOVIES,
     SEARCH_CAT_SHOWS,
     SEARCH_CAT_SHOWS_ANIME,
+    SEARCH_REQUEST_TIMEOUT_SECONDS,
 )
 from quasarr.providers import shared_state
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
@@ -55,7 +57,11 @@ class Source(AbstractSearchSource):
         }
 
         try:
-            r = requests.get(rss_url, headers=headers, timeout=10)
+            r = requests.get(
+                rss_url,
+                headers=headers,
+                timeout=FEED_REQUEST_TIMEOUT_SECONDS,
+            )
             r.raise_for_status()
 
             soup = BeautifulSoup(r.content, "html.parser")
@@ -219,7 +225,12 @@ class Source(AbstractSearchSource):
         trace(f"Searching: '{search_string}'")
 
         try:
-            r = requests.get(api_url, headers=headers, params=params, timeout=10)
+            r = requests.get(
+                api_url,
+                headers=headers,
+                params=params,
+                timeout=SEARCH_REQUEST_TIMEOUT_SECONDS,
+            )
             r.raise_for_status()
 
             data = r.json()
@@ -248,7 +259,11 @@ class Source(AbstractSearchSource):
                     trace(f"Fetching details for UID: {uid}")
 
                     detail_url = f"https://api.{host}/start/d/{uid}"
-                    detail_r = requests.get(detail_url, headers=headers, timeout=10)
+                    detail_r = requests.get(
+                        detail_url,
+                        headers=headers,
+                        timeout=SEARCH_REQUEST_TIMEOUT_SECONDS,
+                    )
                     detail_r.raise_for_status()
 
                     detail_data = detail_r.json()

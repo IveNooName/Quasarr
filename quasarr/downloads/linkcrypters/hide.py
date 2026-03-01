@@ -8,6 +8,7 @@ from typing import Any, Dict, List
 
 import requests
 
+from quasarr.constants import DOWNLOAD_REQUEST_TIMEOUT_SECONDS
 from quasarr.providers.log import debug, info
 from quasarr.providers.statistics import StatsHelper
 
@@ -41,7 +42,11 @@ def unhide_links(shared_state, url, session):
 
             info(f"Resolving hide.cx foreign container ID: {container_id}")
             resolve_url = f"https://api.hide.cx/fc/Container/{container_id}"
-            resp = session.get(resolve_url, headers=headers, timeout=30)
+            resp = session.get(
+                resolve_url,
+                headers=headers,
+                timeout=DOWNLOAD_REQUEST_TIMEOUT_SECONDS,
+            )
 
             try:
                 resolved = resp.json()
@@ -63,7 +68,11 @@ def unhide_links(shared_state, url, session):
         headers = {"User-Agent": shared_state.values["user_agent"]}
 
         container_url = f"https://api.hide.cx/containers/{container_id}"
-        response = session.get(container_url, headers=headers)
+        response = session.get(
+            container_url,
+            headers=headers,
+            timeout=DOWNLOAD_REQUEST_TIMEOUT_SECONDS,
+        )
         data = response.json()
 
         link_ids = [link.get("id") for link in data.get("links", []) if link.get("id")]
@@ -75,7 +84,11 @@ def unhide_links(shared_state, url, session):
         def fetch_link(link_id):
             debug(f"Fetching hide.cx link with ID: {link_id}")
             link_url = f"https://api.hide.cx/containers/{container_id}/links/{link_id}"
-            link_data = session.get(link_url, headers=headers).json()
+            link_data = session.get(
+                link_url,
+                headers=headers,
+                timeout=DOWNLOAD_REQUEST_TIMEOUT_SECONDS,
+            ).json()
             return link_data.get("url")
 
         # Process links in batches of 10
@@ -134,9 +147,17 @@ def decrypt_links_if_hide(shared_state: Any, items: List[List[str]]) -> Dict[str
         try:
             # Try HEAD first, fallback to GET
             try:
-                resp = session.head(original_url, allow_redirects=True, timeout=10)
+                resp = session.head(
+                    original_url,
+                    allow_redirects=True,
+                    timeout=DOWNLOAD_REQUEST_TIMEOUT_SECONDS,
+                )
             except requests.RequestException:
-                resp = session.get(original_url, allow_redirects=True, timeout=10)
+                resp = session.get(
+                    original_url,
+                    allow_redirects=True,
+                    timeout=DOWNLOAD_REQUEST_TIMEOUT_SECONDS,
+                )
 
             final_url = resp.url
 

@@ -8,6 +8,7 @@ import pickle
 import requests
 from bs4 import BeautifulSoup
 
+from quasarr.constants import SESSION_REQUEST_TIMEOUT_SECONDS
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
 from quasarr.providers.log import debug, info
 from quasarr.providers.utils import is_site_usable
@@ -53,7 +54,7 @@ def create_and_persist_session(shared_state):
     try:
         # Step 1: Get login page to retrieve CSRF token
         login_page_url = f"https://www.{host}/login/"
-        login_r = sess.get(login_page_url, timeout=30)
+        login_r = sess.get(login_page_url, timeout=SESSION_REQUEST_TIMEOUT_SECONDS)
 
         login_r.raise_for_status()
 
@@ -78,12 +79,16 @@ def create_and_persist_session(shared_state):
         }
 
         login_url = f"https://www.{host}/login/login"
-        submit_r = sess.post(login_url, data=login_data, timeout=30)
+        submit_r = sess.post(
+            login_url, data=login_data, timeout=SESSION_REQUEST_TIMEOUT_SECONDS
+        )
         submit_r.raise_for_status()
 
         # Step 3: Verify login success
         # Check if we're logged in by accessing the main page
-        verify_r = sess.get(f"https://www.{host}/", timeout=30)
+        verify_r = sess.get(
+            f"https://www.{host}/", timeout=SESSION_REQUEST_TIMEOUT_SECONDS
+        )
         verify_r.raise_for_status()
 
         if 'data-logged-in="true"' not in verify_r.text:
@@ -167,7 +172,7 @@ def fetch_via_requests_session(
     target_url: str,
     post_data: dict = None,
     get_params: dict = None,
-    timeout: int = 30,
+    timeout: int = SESSION_REQUEST_TIMEOUT_SECONDS,
 ):
     """
     Execute request using the session.

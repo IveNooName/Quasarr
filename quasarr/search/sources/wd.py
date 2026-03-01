@@ -13,11 +13,13 @@ from bs4 import BeautifulSoup
 
 from quasarr.constants import (
     CODEC_REGEX,
+    FEED_REQUEST_TIMEOUT_SECONDS,
     RESOLUTION_REGEX,
     SEARCH_CAT_BOOKS,
     SEARCH_CAT_MOVIES,
     SEARCH_CAT_MUSIC,
     SEARCH_CAT_SHOWS,
+    SEARCH_REQUEST_TIMEOUT_SECONDS,
     XXX_REGEX,
 )
 from quasarr.providers import shared_state
@@ -75,7 +77,9 @@ class Source(AbstractSearchSource):
         try:
             # Try normal request first
             try:
-                r = requests.get(url, headers=headers, timeout=30)
+                r = requests.get(
+                    url, headers=headers, timeout=FEED_REQUEST_TIMEOUT_SECONDS
+                )
             except requests.RequestException:
                 r = None
 
@@ -83,7 +87,11 @@ class Source(AbstractSearchSource):
             if r is None or r.status_code == 403 or is_cloudflare_challenge(r.text):
                 if is_flaresolverr_available(shared_state):
                     debug("Encountered Cloudflare on feed. Trying FlareSolverr...")
-                    r = flaresolverr_get(shared_state, url)
+                    r = flaresolverr_get(
+                        shared_state,
+                        url,
+                        timeout=FEED_REQUEST_TIMEOUT_SECONDS,
+                    )
                 elif r is None:
                     raise requests.RequestException(
                         "Connection failed and FlareSolverr not available"
@@ -145,7 +153,9 @@ class Source(AbstractSearchSource):
         try:
             # Try normal request first
             try:
-                r = requests.get(url, headers=headers, timeout=30)
+                r = requests.get(
+                    url, headers=headers, timeout=SEARCH_REQUEST_TIMEOUT_SECONDS
+                )
             except requests.RequestException:
                 r = None
 
@@ -153,7 +163,11 @@ class Source(AbstractSearchSource):
             if r is None or r.status_code == 403 or is_cloudflare_challenge(r.text):
                 if is_flaresolverr_available(shared_state):
                     debug("Encountered Cloudflare on search. Trying FlareSolverr...")
-                    r = flaresolverr_get(shared_state, url)
+                    r = flaresolverr_get(
+                        shared_state,
+                        url,
+                        timeout=SEARCH_REQUEST_TIMEOUT_SECONDS,
+                    )
                 elif r is None:
                     raise requests.RequestException(
                         "Connection failed and FlareSolverr not available"

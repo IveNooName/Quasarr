@@ -10,7 +10,11 @@ from datetime import datetime, timedelta
 import requests
 from bs4 import BeautifulSoup
 
-from quasarr.constants import SEARCH_CAT_SHOWS
+from quasarr.constants import (
+    FEED_REQUEST_TIMEOUT_SECONDS,
+    SEARCH_CAT_SHOWS,
+    SEARCH_REQUEST_TIMEOUT_SECONDS,
+)
 from quasarr.providers import shared_state
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
 from quasarr.providers.imdb_metadata import get_localized_title
@@ -46,7 +50,9 @@ class Source(AbstractSearchSource):
             url = f"https://{sj_host}/api/releases/latest/{days}"
 
             try:
-                r = requests.get(url, headers=headers, timeout=30)
+                r = requests.get(
+                    url, headers=headers, timeout=FEED_REQUEST_TIMEOUT_SECONDS
+                )
                 r.raise_for_status()
                 data = json.loads(r.content)
             except Exception as e:
@@ -144,7 +150,12 @@ class Source(AbstractSearchSource):
         params = {"q": localized_title}
 
         try:
-            r = requests.get(search_url, headers=headers, params=params, timeout=10)
+            r = requests.get(
+                search_url,
+                headers=headers,
+                params=params,
+                timeout=SEARCH_REQUEST_TIMEOUT_SECONDS,
+            )
             soup = BeautifulSoup(r.content, "html.parser")
             results = soup.find_all("a", href=re.compile(r"^/serie/"))
         except Exception as e:
@@ -179,7 +190,11 @@ class Source(AbstractSearchSource):
 
                 series_url = f"https://{dj_host}{result['href']}"
 
-                r = requests.get(series_url, headers=headers, timeout=10)
+                r = requests.get(
+                    series_url,
+                    headers=headers,
+                    timeout=SEARCH_REQUEST_TIMEOUT_SECONDS,
+                )
                 media_id_match = re.search(r'data-mediaid="([^"]+)"', r.text)
                 if not media_id_match:
                     warn(f"No media id for {result_title}")
@@ -188,7 +203,11 @@ class Source(AbstractSearchSource):
                 media_id = media_id_match.group(1)
                 api_url = f"https://{dj_host}/api/media/{media_id}/releases"
 
-                r = requests.get(api_url, headers=headers, timeout=10)
+                r = requests.get(
+                    api_url,
+                    headers=headers,
+                    timeout=SEARCH_REQUEST_TIMEOUT_SECONDS,
+                )
                 r.raise_for_status()
                 data = json.loads(r.content)
 

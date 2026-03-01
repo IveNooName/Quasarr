@@ -9,6 +9,7 @@ from urllib.parse import urlencode, urljoin, urlparse, urlunparse
 import requests
 from bs4 import BeautifulSoup
 
+from quasarr.constants import DOWNLOAD_REQUEST_TIMEOUT_SECONDS
 from quasarr.downloads.sources.helpers.abstract_source import AbstractDownloadSource
 from quasarr.providers.cloudflare import (
     flaresolverr_create_session,
@@ -234,7 +235,11 @@ def _strategy_standard(url, headers):
 
     try:
         # 1. GET
-        r = session.get(clean_url, headers=headers, timeout=10)
+        r = session.get(
+            clean_url,
+            headers=headers,
+            timeout=DOWNLOAD_REQUEST_TIMEOUT_SECONDS,
+        )
         if r.status_code == 403 or is_cloudflare_challenge(r.text):
             debug("Standard GET hit Cloudflare/403.")
             return None
@@ -269,7 +274,10 @@ def _strategy_standard(url, headers):
 
         debug(f"Standard: Posting to {action_url}")
         r_post = session.post(
-            action_url, data=encoded_payload, headers=post_headers, timeout=15
+            action_url,
+            data=encoded_payload,
+            headers=post_headers,
+            timeout=DOWNLOAD_REQUEST_TIMEOUT_SECONDS,
         )
 
         if r_post.status_code == 403 or is_cloudflare_challenge(r_post.text):
@@ -313,7 +321,12 @@ def _strategy_flaresolverr_loop(shared_state, url):
 
         # 1. Initial GET
         debug(f"FlareSolverr: GET {clean_url}")
-        r_current = flaresolverr_get(shared_state, clean_url, session_id=session_id)
+        r_current = flaresolverr_get(
+            shared_state,
+            clean_url,
+            timeout=DOWNLOAD_REQUEST_TIMEOUT_SECONDS,
+            session_id=session_id,
+        )
         current_html = r_current.text
 
         # Extract IMDB from the first successful page load
@@ -353,6 +366,7 @@ def _strategy_flaresolverr_loop(shared_state, url):
                 data=encoded_payload,
                 session_id=session_id,
                 headers={"Content-Type": "application/x-www-form-urlencoded"},
+                timeout=DOWNLOAD_REQUEST_TIMEOUT_SECONDS,
             )
 
             # D. Update State

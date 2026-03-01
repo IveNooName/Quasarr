@@ -8,6 +8,7 @@ from urllib.parse import urlparse
 import requests
 from bs4 import BeautifulSoup
 
+from quasarr.constants import DOWNLOAD_REQUEST_TIMEOUT_SECONDS
 from quasarr.downloads.sources.helpers.abstract_source import AbstractDownloadSource
 from quasarr.providers.cloudflare import ensure_session_cf_bypassed
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
@@ -26,7 +27,12 @@ class Source(AbstractDownloadSource):
 
         try:
             session, headers, r = ensure_session_cf_bypassed(
-                info, shared_state, session, url, headers
+                info,
+                shared_state,
+                session,
+                url,
+                headers,
+                timeout=DOWNLOAD_REQUEST_TIMEOUT_SECONDS,
             )
             if not r:
                 raise requests.RequestException("Cloudflare bypass failed")

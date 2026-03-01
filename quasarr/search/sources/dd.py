@@ -7,9 +7,11 @@ import time
 from datetime import datetime, timezone
 
 from quasarr.constants import (
+    FEED_REQUEST_TIMEOUT_SECONDS,
     SEARCH_CAT_MOVIES,
     SEARCH_CAT_SHOWS,
     SEARCH_CAT_SHOWS_ANIME,
+    SEARCH_REQUEST_TIMEOUT_SECONDS,
 )
 from quasarr.providers import shared_state
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
@@ -81,10 +83,10 @@ class Source(AbstractSearchSource):
 
         if not search_string:
             search_type = "feed"
-            timeout = 30
+            timeout = FEED_REQUEST_TIMEOUT_SECONDS
         else:
             search_type = "search"
-            timeout = 10
+            timeout = SEARCH_REQUEST_TIMEOUT_SECONDS
 
         qualities = [
             "disk-480p",

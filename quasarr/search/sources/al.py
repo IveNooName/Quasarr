@@ -9,9 +9,11 @@ from urllib.parse import quote_plus, urljoin
 from bs4 import BeautifulSoup
 
 from quasarr.constants import (
+    FEED_REQUEST_TIMEOUT_SECONDS,
     SEARCH_CAT_MOVIES,
     SEARCH_CAT_SHOWS,
     SEARCH_CAT_SHOWS_ANIME,
+    SEARCH_REQUEST_TIMEOUT_SECONDS,
 )
 from quasarr.downloads.sources.al import (
     _guess_title,
@@ -66,7 +68,7 @@ class Source(AbstractSearchSource):
                 shared_state,
                 method="GET",
                 target_url=f"https://www.{host}/",
-                timeout=30,
+                timeout=FEED_REQUEST_TIMEOUT_SECONDS,
             )
             r.raise_for_status()
         except Exception as e:
@@ -245,7 +247,7 @@ class Source(AbstractSearchSource):
                     shared_state,
                     method="GET",
                     target_url=url,
-                    timeout=10,
+                    timeout=SEARCH_REQUEST_TIMEOUT_SECONDS,
                     year=year,
                 )
                 r.raise_for_status()
@@ -338,7 +340,10 @@ class Source(AbstractSearchSource):
                 else:
                     entry = {"timestamp": datetime.now()}
                     data_html = fetch_via_requests_session(
-                        shared_state, method="GET", target_url=url, timeout=10
+                        shared_state,
+                        method="GET",
+                        target_url=url,
+                        timeout=SEARCH_REQUEST_TIMEOUT_SECONDS,
                     ).text
 
                 entry["html"] = data_html

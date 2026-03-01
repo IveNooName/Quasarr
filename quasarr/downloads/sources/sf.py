@@ -8,6 +8,7 @@ from datetime import datetime
 import requests
 from bs4 import BeautifulSoup
 
+from quasarr.constants import DOWNLOAD_REQUEST_TIMEOUT_SECONDS
 from quasarr.downloads.sources.helpers.abstract_source import AbstractDownloadSource
 from quasarr.providers.hostname_issues import mark_hostname_issue
 from quasarr.providers.log import debug, info
@@ -59,7 +60,11 @@ class Source(AbstractDownloadSource):
                 season = "ALL"
 
             headers = {"User-Agent": user_agent}
-            r = requests.get(url, headers=headers, timeout=10)
+            r = requests.get(
+                url,
+                headers=headers,
+                timeout=DOWNLOAD_REQUEST_TIMEOUT_SECONDS,
+            )
             r.raise_for_status()
             series_page = r.text
             soup = BeautifulSoup(series_page, "html.parser")
@@ -84,7 +89,11 @@ class Source(AbstractDownloadSource):
                 + epoch
             )
 
-            r = requests.get(api_url, headers=headers, timeout=10)
+            r = requests.get(
+                api_url,
+                headers=headers,
+                timeout=DOWNLOAD_REQUEST_TIMEOUT_SECONDS,
+            )
             r.raise_for_status()
             try:
                 data = r.json()["html"]
@@ -98,7 +107,11 @@ class Source(AbstractDownloadSource):
                     + "/season/ALL?lang=ALL&_="
                     + epoch
                 )
-                r = requests.get(api_url, headers=headers, timeout=10)
+                r = requests.get(
+                    api_url,
+                    headers=headers,
+                    timeout=DOWNLOAD_REQUEST_TIMEOUT_SECONDS,
+                )
                 r.raise_for_status()
                 data = r.json()["html"]
 
@@ -262,7 +275,10 @@ def _resolve_sf_redirect(url, user_agent):
     """Follow redirects and return final URL or None if 404."""
     try:
         r = requests.get(
-            url, allow_redirects=True, timeout=10, headers={"User-Agent": user_agent}
+            url,
+            allow_redirects=True,
+            timeout=DOWNLOAD_REQUEST_TIMEOUT_SECONDS,
+            headers={"User-Agent": user_agent},
         )
         r.raise_for_status()
         if r.history:

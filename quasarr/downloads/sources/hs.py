@@ -5,7 +5,11 @@
 import requests
 from bs4 import BeautifulSoup
 
-from quasarr.constants import AFFILIATE_REGEX, FILECRYPT_REGEX
+from quasarr.constants import (
+    AFFILIATE_REGEX,
+    DOWNLOAD_REQUEST_TIMEOUT_SECONDS,
+    FILECRYPT_REGEX,
+)
 from quasarr.downloads.sources.helpers.abstract_source import AbstractDownloadSource
 from quasarr.providers.hostname_issues import mark_hostname_issue
 from quasarr.providers.log import debug, info
@@ -25,7 +29,11 @@ class Source(AbstractDownloadSource):
         links = []
 
         try:
-            r = requests.get(url, headers=headers, timeout=30)
+            r = requests.get(
+                url,
+                headers=headers,
+                timeout=DOWNLOAD_REQUEST_TIMEOUT_SECONDS,
+            )
             r.raise_for_status()
             soup = BeautifulSoup(r.text, "html.parser")
 

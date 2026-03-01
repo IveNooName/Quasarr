@@ -10,7 +10,12 @@ from datetime import datetime, timedelta
 import requests
 from bs4 import BeautifulSoup
 
-from quasarr.constants import SEARCH_CAT_SHOWS, SEARCH_CAT_SHOWS_ANIME
+from quasarr.constants import (
+    FEED_REQUEST_TIMEOUT_SECONDS,
+    SEARCH_CAT_SHOWS,
+    SEARCH_CAT_SHOWS_ANIME,
+    SEARCH_REQUEST_TIMEOUT_SECONDS,
+)
 from quasarr.providers import shared_state
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
 from quasarr.providers.imdb_metadata import get_localized_title
@@ -54,7 +59,9 @@ class Source(AbstractSearchSource):
 
             try:
                 r = requests.get(
-                    f"https://{sf}/updates/{formatted_date}#list", headers, timeout=30
+                    f"https://{sf}/updates/{formatted_date}#list",
+                    headers,
+                    timeout=FEED_REQUEST_TIMEOUT_SECONDS,
                 )
                 r.raise_for_status()
             except Exception as e:
@@ -161,7 +168,11 @@ class Source(AbstractSearchSource):
         headers = {"User-Agent": shared_state.values["user_agent"]}
 
         try:
-            r = requests.get(url, headers=headers, timeout=10)
+            r = requests.get(
+                url,
+                headers=headers,
+                timeout=SEARCH_REQUEST_TIMEOUT_SECONDS,
+            )
             r.raise_for_status()
             feed = r.json()
         except Exception as e:
@@ -208,7 +219,11 @@ class Source(AbstractSearchSource):
                 # load series page
                 series_url = f"https://{sf}/{series_id}"
                 try:
-                    r = requests.get(series_url, headers=headers, timeout=10)
+                    r = requests.get(
+                        series_url,
+                        headers=headers,
+                        timeout=SEARCH_REQUEST_TIMEOUT_SECONDS,
+                    )
                     r.raise_for_status()
                     series_page = r.text
                     imdb_link = BeautifulSoup(series_page, "html.parser").find(
@@ -232,7 +247,11 @@ class Source(AbstractSearchSource):
                 )
                 trace(f"Requesting SF API URL: {api_url}")
                 try:
-                    r = requests.get(api_url, headers=headers, timeout=10)
+                    r = requests.get(
+                        api_url,
+                        headers=headers,
+                        timeout=SEARCH_REQUEST_TIMEOUT_SECONDS,
+                    )
                     r.raise_for_status()
                     resp_json = r.json()
                     if resp_json.get("error"):

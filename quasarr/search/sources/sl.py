@@ -14,11 +14,13 @@ import requests
 from bs4 import BeautifulSoup
 
 from quasarr.constants import (
+    FEED_REQUEST_TIMEOUT_SECONDS,
     SEARCH_CAT_BOOKS,
     SEARCH_CAT_MOVIES,
     SEARCH_CAT_MUSIC,
     SEARCH_CAT_SHOWS,
     SEARCH_CAT_SHOWS_ANIME,
+    SEARCH_REQUEST_TIMEOUT_SECONDS,
 )
 from quasarr.providers import shared_state
 from quasarr.providers.cloudflare import ensure_session_cf_bypassed
@@ -77,7 +79,12 @@ class Source(AbstractSearchSource):
         try:
             session = requests.Session()
             session, headers, r = ensure_session_cf_bypassed(
-                info, shared_state, session, url, headers
+                info,
+                shared_state,
+                session,
+                url,
+                headers,
+                timeout=FEED_REQUEST_TIMEOUT_SECONDS,
             )
             if not r:
                 raise requests.RequestException("Cloudflare bypass failed")
@@ -211,7 +218,12 @@ class Source(AbstractSearchSource):
                     debug(f"Fetching {url}")
                     session = requests.Session()
                     session, _, r = ensure_session_cf_bypassed(
-                        info, shared_state, session, url, headers
+                        info,
+                        shared_state,
+                        session,
+                        url,
+                        headers,
+                        timeout=SEARCH_REQUEST_TIMEOUT_SECONDS,
                     )
                     if not r:
                         raise requests.RequestException("Cloudflare bypass failed")

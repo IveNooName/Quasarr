@@ -11,6 +11,12 @@ import re
 # User agent for all requests, if not overwritten by Flaresolverr
 FALLBACK_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36"
 
+# Standard request timeout budgets.
+SEARCH_REQUEST_TIMEOUT_SECONDS = 10
+FEED_REQUEST_TIMEOUT_SECONDS = 30
+DOWNLOAD_REQUEST_TIMEOUT_SECONDS = 30
+SESSION_REQUEST_TIMEOUT_SECONDS = 30
+
 
 # ==============================================================================
 # SEARCH AND DOWNLOAD CATEGORIES
@@ -124,6 +130,14 @@ HOSTERS = [
     ),  # Active. Smaller ecosystem, often specific to certain boards.
     ("Fikper", False),  # Newer player (relative to RG), gained traction in 2024-25.
     ("Mega", False),  # Active, but functions differently (cloud drive vs. OCH).
+    ("AkiraBox", False),  # Common mirror on anime-focused releases.
+    ("BuzzHeavier", False),  # Common mirror on anime-focused releases.
+    ("ClickNupload", False),  # Common mirror on RM releases.
+    ("GoFile", False),  # Common mirror on anime-focused releases.
+    ("KrakenFiles", False),  # Common mirror on anime-focused releases.
+    ("MdiaLoad", False),  # Common mirror on anime-focused releases.
+    ("MultiUp", False),  # Common mirror on anime-focused releases.
+    ("RapidRAR", False),  # Common mirror on RM releases.
     ("frdl", False),  # Rarely used in some forums
 ]
 
@@ -271,12 +285,16 @@ LANGUAGE_TO_ALPHA2 = {
     "german": "DE",
     "deutsch": "DE",
     "de": "DE",
+    "ger": "DE",
+    "deu": "DE",
     "english": "EN",
     "englisch": "EN",
     "en": "EN",
+    "eng": "EN",
     "japanese": "JP",
     "japanisch": "JP",
     "jp": "JP",
+    "jpn": "JP",
 }
 
 SUBTITLE_TOKEN_BY_ALPHA2 = {

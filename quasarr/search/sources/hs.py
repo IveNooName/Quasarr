@@ -14,9 +14,11 @@ from quasarr.constants import (
     DATE_REGEX,
     EPISODE_DURATION_REGEX,
     EPISODE_EXTRACT_REGEX,
+    FEED_REQUEST_TIMEOUT_SECONDS,
     IMDB_REGEX,
     SEARCH_CAT_MOVIES,
     SEARCH_CAT_SHOWS,
+    SEARCH_REQUEST_TIMEOUT_SECONDS,
     SIZE_REGEX,
     TRAILING_GARBAGE_PATTERN,
 )
@@ -54,7 +56,11 @@ class Source(AbstractSearchSource):
         headers = {"User-Agent": shared_state.values["user_agent"]}
 
         try:
-            r = requests.get(feed_url, headers=headers, timeout=30)
+            r = requests.get(
+                feed_url,
+                headers=headers,
+                timeout=FEED_REQUEST_TIMEOUT_SECONDS,
+            )
             r.raise_for_status()
 
             # Parse RSS - use html.parser to avoid lxml dependency
@@ -159,7 +165,11 @@ class Source(AbstractSearchSource):
         headers = {"User-Agent": shared_state.values["user_agent"]}
 
         try:
-            r = requests.get(search_url, headers=headers, timeout=30)
+            r = requests.get(
+                search_url,
+                headers=headers,
+                timeout=SEARCH_REQUEST_TIMEOUT_SECONDS,
+            )
             r.raise_for_status()
 
             soup = BeautifulSoup(r.content, "html.parser")

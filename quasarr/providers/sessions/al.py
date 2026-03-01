@@ -12,7 +12,7 @@ import requests
 from bs4 import BeautifulSoup
 from requests.exceptions import RequestException, Timeout
 
-from quasarr.constants import SESSION_MAX_AGE_SECONDS
+from quasarr.constants import SESSION_MAX_AGE_SECONDS, SESSION_REQUEST_TIMEOUT_SECONDS
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
 from quasarr.providers.log import debug, info, trace
 from quasarr.providers.utils import is_flaresolverr_available, is_site_usable
@@ -61,12 +61,15 @@ def create_and_persist_session(shared_state):
         fs_payload = {
             "cmd": "request.get",
             "url": f"https://www.{host}/",
-            "maxTimeout": 60000,
+            "maxTimeout": SESSION_REQUEST_TIMEOUT_SECONDS * 1000,
         }
 
         try:
             fs_resp = requests.post(
-                flaresolverr_url, headers=fs_headers, json=fs_payload, timeout=30
+                flaresolverr_url,
+                headers=fs_headers,
+                json=fs_payload,
+                timeout=SESSION_REQUEST_TIMEOUT_SECONDS,
             )
             fs_resp.raise_for_status()
         except Timeout:
@@ -118,7 +121,7 @@ def create_and_persist_session(shared_state):
             f"https://www.{host}/auth/signin",
             data=encoded_data,
             headers=login_headers,
-            timeout=30,
+            timeout=SESSION_REQUEST_TIMEOUT_SECONDS,
         )
 
         if r.status_code != 200 or "invalid" in r.text.lower():
@@ -239,7 +242,7 @@ def fetch_via_flaresolverr(
     method: str,
     target_url: str,
     post_data: dict = None,
-    timeout: int = 60,
+    timeout: int = SESSION_REQUEST_TIMEOUT_SECONDS,
 ):
     """
     Load (or recreate) the requests.Session from DB.
@@ -367,7 +370,7 @@ def fetch_via_requests_session(
     method: str,
     target_url: str,
     post_data: dict = None,
-    timeout: int = 30,
+    timeout: int = SESSION_REQUEST_TIMEOUT_SECONDS,
     year: int = None,
 ):
     """

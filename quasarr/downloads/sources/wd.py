@@ -9,6 +9,7 @@ from urllib.parse import urljoin
 import requests
 from bs4 import BeautifulSoup
 
+from quasarr.constants import DOWNLOAD_REQUEST_TIMEOUT_SECONDS
 from quasarr.downloads.sources.helpers.abstract_source import AbstractDownloadSource
 from quasarr.providers.cloudflare import (
     flaresolverr_create_session,
@@ -37,7 +38,11 @@ class Source(AbstractDownloadSource):
 
         try:
             headers = {"User-Agent": shared_state.values["user_agent"]}
-            r = requests.get(url, headers=headers, timeout=10)
+            r = requests.get(
+                url,
+                headers=headers,
+                timeout=DOWNLOAD_REQUEST_TIMEOUT_SECONDS,
+            )
             # Don't raise for status yet, check for 403/challenge
             if r.status_code == 403 or is_cloudflare_challenge(r.text):
                 raise requests.RequestException("Cloudflare protection detected")
@@ -60,7 +65,12 @@ class Source(AbstractDownloadSource):
                     debug(f"Created FlareSolverr session: {session_id}")
 
                 try:
-                    r = flaresolverr_get(shared_state, url, session_id=session_id)
+                    r = flaresolverr_get(
+                        shared_state,
+                        url,
+                        timeout=DOWNLOAD_REQUEST_TIMEOUT_SECONDS,
+                        session_id=session_id,
+                    )
                     if r.status_code == 403 or is_cloudflare_challenge(r.text):
                         info(
                             "Could not bypass Cloudflare protection with FlareSolverr!"
@@ -186,7 +196,12 @@ def _resolve_wd_redirect(shared_state, url, session_id=None):
     # Try FlareSolverr first if available and session_id is provided
     if session_id and is_flaresolverr_available(shared_state):
         try:
-            r = flaresolverr_get(shared_state, url, session_id=session_id)
+            r = flaresolverr_get(
+                shared_state,
+                url,
+                timeout=DOWNLOAD_REQUEST_TIMEOUT_SECONDS,
+                session_id=session_id,
+            )
             if r.status_code == 200:
                 if r.url.endswith("/404.html"):
                     return None
@@ -205,7 +220,7 @@ def _resolve_wd_redirect(shared_state, url, session_id=None):
         r = requests.get(
             url,
             allow_redirects=True,
-            timeout=10,
+            timeout=DOWNLOAD_REQUEST_TIMEOUT_SECONDS,
             headers={"User-Agent": user_agent},
         )
         r.raise_for_status()

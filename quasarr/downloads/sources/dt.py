@@ -8,6 +8,7 @@ from urllib.parse import urlparse
 import requests
 from bs4 import BeautifulSoup
 
+from quasarr.constants import DOWNLOAD_REQUEST_TIMEOUT_SECONDS
 from quasarr.downloads.sources.helpers.abstract_source import AbstractDownloadSource
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
 from quasarr.providers.log import info
@@ -24,7 +25,11 @@ class Source(AbstractDownloadSource):
         session = requests.Session()
 
         try:
-            r = session.get(url, headers=headers, timeout=10)
+            r = session.get(
+                url,
+                headers=headers,
+                timeout=DOWNLOAD_REQUEST_TIMEOUT_SECONDS,
+            )
             r.raise_for_status()
             soup = BeautifulSoup(r.text, "html.parser")
 

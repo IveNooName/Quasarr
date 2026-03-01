@@ -8,6 +8,7 @@ from io import BytesIO
 from Cryptodome.Cipher import AES
 from PIL import Image, ImageChops
 
+from quasarr.constants import DOWNLOAD_REQUEST_TIMEOUT_SECONDS
 from quasarr.providers.log import debug, info
 from quasarr.providers.utils import is_flaresolverr_available
 
@@ -193,7 +194,7 @@ def solve_captcha(
         method="POST",
         target_url=captcha_base,
         post_data={"cID": 0, "rT": 1},
-        timeout=30,
+        timeout=DOWNLOAD_REQUEST_TIMEOUT_SECONDS,
     )
 
     try:
@@ -209,7 +210,10 @@ def solve_captcha(
     for img_id in image_ids:
         img_url = f"{captcha_base}?cid=0&hash={img_id}"
         r_img = fetch_via_requests_session(
-            shared_state, method="GET", target_url=img_url, timeout=30
+            shared_state,
+            method="GET",
+            target_url=img_url,
+            timeout=DOWNLOAD_REQUEST_TIMEOUT_SECONDS,
         )
         if r_img.status_code != 200:
             raise RuntimeError(
@@ -263,7 +267,7 @@ def solve_captcha(
         method="POST",
         target_url=captcha_base,
         post_data={"cID": 0, "pC": identified_captcha_image, "rT": 2},
-        timeout=30,
+        timeout=DOWNLOAD_REQUEST_TIMEOUT_SECONDS,
     )
 
     return {"response": result["text"], "captcha_id": identified_captcha_image}

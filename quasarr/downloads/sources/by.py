@@ -10,6 +10,7 @@ from urllib.parse import urlparse
 import requests
 from bs4 import BeautifulSoup
 
+from quasarr.constants import DOWNLOAD_REQUEST_TIMEOUT_SECONDS
 from quasarr.downloads.sources.helpers.abstract_source import AbstractDownloadSource
 from quasarr.providers.hostname_issues import mark_hostname_issue
 from quasarr.providers.log import debug, info
@@ -31,7 +32,11 @@ class Source(AbstractDownloadSource):
         links = []
 
         try:
-            r = requests.get(url, headers=headers, timeout=10)
+            r = requests.get(
+                url,
+                headers=headers,
+                timeout=DOWNLOAD_REQUEST_TIMEOUT_SECONDS,
+            )
             r.raise_for_status()
             soup = BeautifulSoup(r.text, "html.parser")
             frames = [
@@ -49,7 +54,11 @@ class Source(AbstractDownloadSource):
 
             def fetch(url):
                 try:
-                    rq = requests.get(url, headers=headers, timeout=10)
+                    rq = requests.get(
+                        url,
+                        headers=headers,
+                        timeout=DOWNLOAD_REQUEST_TIMEOUT_SECONDS,
+                    )
                     rq.raise_for_status()
                     return rq.text, url
                 except Exception as e:
@@ -99,7 +108,10 @@ class Source(AbstractDownloadSource):
                 href, _hostname = href_hostname
                 try:
                     rq = requests.get(
-                        href, headers=headers, timeout=10, allow_redirects=True
+                        href,
+                        headers=headers,
+                        timeout=DOWNLOAD_REQUEST_TIMEOUT_SECONDS,
+                        allow_redirects=True,
                     )
                     rq.raise_for_status()
                     if "/404.html" in rq.url:

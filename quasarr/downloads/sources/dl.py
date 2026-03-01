@@ -7,7 +7,7 @@ from urllib.parse import urlparse
 
 from bs4 import BeautifulSoup, NavigableString
 
-from quasarr.constants import SHARE_HOSTERS_LOWERCASE
+from quasarr.constants import DOWNLOAD_REQUEST_TIMEOUT_SECONDS, SHARE_HOSTERS_LOWERCASE
 from quasarr.downloads.sources.helpers.abstract_source import AbstractDownloadSource
 from quasarr.providers.hostname_issues import mark_hostname_issue
 from quasarr.providers.log import debug, info
@@ -41,7 +41,10 @@ class Source(AbstractDownloadSource):
 
         try:
             response = fetch_via_requests_session(
-                shared_state, method="GET", target_url=url, timeout=30
+                shared_state,
+                method="GET",
+                target_url=url,
+                timeout=DOWNLOAD_REQUEST_TIMEOUT_SECONDS,
             )
 
             if response.status_code != 200:

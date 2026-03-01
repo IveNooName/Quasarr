@@ -14,6 +14,7 @@ import requests
 from bs4 import BeautifulSoup
 from Cryptodome.Cipher import AES
 
+from quasarr.constants import DOWNLOAD_REQUEST_TIMEOUT_SECONDS
 from quasarr.providers.cloudflare import (
     ensure_session_cf_bypassed,
     is_cloudflare_challenge,
@@ -133,7 +134,9 @@ class DLC:
 
             debug("Requesting DLC decryption service.")
             dlc_content = requests.get(
-                self.API_URL + dlc_key, headers=headers, timeout=10
+                self.API_URL + dlc_key,
+                headers=headers,
+                timeout=DOWNLOAD_REQUEST_TIMEOUT_SECONDS,
             ).content.decode("utf-8")
 
             rc = base64.b64decode(
@@ -176,7 +179,12 @@ def get_filecrypt_links(shared_state, token, title, url, password=None, mirrors=
 
     debug("Ensuring Cloudflare bypass is ready.")
     session, headers, output = ensure_session_cf_bypassed(
-        info, shared_state, session, url, headers
+        info,
+        shared_state,
+        session,
+        url,
+        headers,
+        timeout=DOWNLOAD_REQUEST_TIMEOUT_SECONDS,
     )
     if not session or not output:
         debug("Cloudflare bypass failed.")
@@ -220,7 +228,10 @@ def get_filecrypt_links(shared_state, token, title, url, password=None, mirrors=
         data = {password_field: password}
         try:
             output = session.post(
-                output.url, data=data, headers=post_headers, timeout=30
+                output.url,
+                data=data,
+                headers=post_headers,
+                timeout=DOWNLOAD_REQUEST_TIMEOUT_SECONDS,
             )
             debug("Password POST request successful.")
         except requests.RequestException as e:
@@ -233,7 +244,12 @@ def get_filecrypt_links(shared_state, token, title, url, password=None, mirrors=
                 "Encountered Cloudflare after password POST. Re-running FlareSolverr..."
             )
             session, headers, output = ensure_session_cf_bypassed(
-                info, shared_state, session, output.url, headers
+                info,
+                shared_state,
+                session,
+                output.url,
+                headers,
+                timeout=DOWNLOAD_REQUEST_TIMEOUT_SECONDS,
             )
             if not session or not output:
                 debug("Cloudflare bypass failed after password POST.")
@@ -267,6 +283,7 @@ def get_filecrypt_links(shared_state, token, title, url, password=None, mirrors=
                     "User-Agent": shared_state.values["user_agent"],
                     "Content-Type": "application/x-www-form-urlencoded",
                 },
+                timeout=DOWNLOAD_REQUEST_TIMEOUT_SECONDS,
             )
             url = output.url
             soup = BeautifulSoup(output.text, "html.parser")
@@ -282,6 +299,7 @@ def get_filecrypt_links(shared_state, token, title, url, password=None, mirrors=
                 "User-Agent": shared_state.values["user_agent"],
                 "Content-Type": "application/x-www-form-urlencoded",
             },
+            timeout=DOWNLOAD_REQUEST_TIMEOUT_SECONDS,
         )
     url = output.url
 
@@ -382,7 +400,11 @@ def get_filecrypt_links(shared_state, token, title, url, password=None, mirrors=
         for mirror in mirrors_list:
             if not len(mirrors_list) == 1:
                 debug(f"Loading mirror: {mirror}")
-                output = session.get(mirror, headers=headers)
+                output = session.get(
+                    mirror,
+                    headers=headers,
+                    timeout=DOWNLOAD_REQUEST_TIMEOUT_SECONDS,
+                )
                 url = output.url
                 soup = BeautifulSoup(output.text, "html.parser")
 
@@ -409,7 +431,9 @@ def get_filecrypt_links(shared_state, token, title, url, password=None, mirrors=
                     ).attrs["value"]
                     filtered_cnl_link = f"https://{domain}/_CNL/{filtered_cnl_secret}.html?{season}&{episode}"
                     filtered_cnl_result = session.post(
-                        filtered_cnl_link, headers=headers
+                        filtered_cnl_link,
+                        headers=headers,
+                        timeout=DOWNLOAD_REQUEST_TIMEOUT_SECONDS,
                     )
                     if filtered_cnl_result.status_code == 200:
                         filtered_cnl_data = json.loads(filtered_cnl_result.text)
@@ -447,7 +471,11 @@ def get_filecrypt_links(shared_state, token, title, url, password=None, mirrors=
                         )
                     else:
                         dlc_link = f"https://{domain}/DLC/{dlc_secret}.dlc"
-                    dlc_file = session.get(dlc_link, headers=headers).content
+                    dlc_file = session.get(
+                        dlc_link,
+                        headers=headers,
+                        timeout=DOWNLOAD_REQUEST_TIMEOUT_SECONDS,
+                    ).content
                     links.extend(DLC(shared_state, dlc_file).decrypt())
                 except:
                     debug("DLC fallback failed, trying button fallback.")

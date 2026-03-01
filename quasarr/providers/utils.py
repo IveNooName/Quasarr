@@ -20,6 +20,7 @@ from PIL import Image
 
 from quasarr.constants import (
     CLIENT_DOWNLOAD_CATEGORY_FALLBACK_MAP,
+    DOWNLOAD_REQUEST_TIMEOUT_SECONDS,
     MONTHS_MAP,
     MOVIE_REGEX,
     SEARCH_CAT_BOOKS,
@@ -36,6 +37,7 @@ from quasarr.constants import (
     SEARCH_CATEGORIES,
     SEARCH_CATEGORY_CACHE_FAMILIES,
     SEASON_EP_REGEX,
+    SESSION_REQUEST_TIMEOUT_SECONDS,
 )
 from quasarr.providers.log import crit, debug, error, trace, warn
 from quasarr.search.sources.helpers import get_login_required_hostnames
@@ -128,7 +130,10 @@ def check_flaresolverr(shared_state, flaresolverr_url):
 
     try:
         response = requests.post(
-            flaresolverr_url, headers=headers, json=data, timeout=10
+            flaresolverr_url,
+            headers=headers,
+            json=data,
+            timeout=SESSION_REQUEST_TIMEOUT_SECONDS,
         )
         response.raise_for_status()
         json_data = response.json()
@@ -339,7 +344,11 @@ def fetch_status_image(status_url, shared_state=None):
             user_agent = shared_state.values.get("user_agent")
             if user_agent:
                 headers["User-Agent"] = user_agent
-        response = requests.get(status_url, headers=headers, timeout=10)
+        response = requests.get(
+            status_url,
+            headers=headers,
+            timeout=DOWNLOAD_REQUEST_TIMEOUT_SECONDS,
+        )
         if response.status_code == 200:
             return (status_url, response.content)
     except Exception:

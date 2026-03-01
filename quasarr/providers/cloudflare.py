@@ -7,6 +7,10 @@ import urllib.parse
 import requests
 from bs4 import BeautifulSoup
 
+from quasarr.constants import (
+    DOWNLOAD_REQUEST_TIMEOUT_SECONDS,
+    SESSION_REQUEST_TIMEOUT_SECONDS,
+)
 from quasarr.providers.log import debug
 from quasarr.providers.utils import is_flaresolverr_available
 
@@ -40,7 +44,11 @@ def is_cloudflare_challenge(html: str) -> bool:
 
 
 def update_session_via_flaresolverr(
-    info, shared_state, sess, target_url: str, timeout: int = 60
+    info,
+    shared_state,
+    sess,
+    target_url: str,
+    timeout: int = DOWNLOAD_REQUEST_TIMEOUT_SECONDS,
 ):
     # Check if FlareSolverr is available
     if not is_flaresolverr_available(shared_state):
@@ -98,13 +106,20 @@ def update_session_via_flaresolverr(
     return {"session": sess, "user_agent": solution.get("userAgent", None)}
 
 
-def ensure_session_cf_bypassed(info, shared_state, session, url, headers):
+def ensure_session_cf_bypassed(
+    info,
+    shared_state,
+    session,
+    url,
+    headers,
+    timeout: int = DOWNLOAD_REQUEST_TIMEOUT_SECONDS,
+):
     """
     Performs a GET and, if Cloudflare challenge or 403 is present, tries FlareSolverr.
     Returns tuple: (session, headers, response) or (None, None, None) on failure.
     """
     try:
-        resp = session.get(url, headers=headers, timeout=30)
+        resp = session.get(url, headers=headers, timeout=timeout)
     except requests.RequestException as e:
         info(f"Initial GET failed: {e}")
         return None, None, None
@@ -123,7 +138,7 @@ def ensure_session_cf_bypassed(info, shared_state, session, url, headers):
             "Encountered Cloudflare protection. Solving challenge with FlareSolverr..."
         )
         flaresolverr_result = update_session_via_flaresolverr(
-            info, shared_state, session, url
+            info, shared_state, session, url, timeout=timeout
         )
         if not flaresolverr_result:
             info("FlareSolverr did not return a result.")
@@ -139,7 +154,7 @@ def ensure_session_cf_bypassed(info, shared_state, session, url, headers):
 
         # re-fetch using the new session/headers
         try:
-            resp = session.get(url, headers=headers, timeout=30)
+            resp = session.get(url, headers=headers, timeout=timeout)
         except requests.RequestException as e:
             info(f"GET after FlareSolverr failed: {e}")
             return None, None, None
@@ -171,7 +186,12 @@ class FlareSolverrResponse:
             raise requests.HTTPError(f"{self.status_code} Error at {self.url}")
 
 
-def flaresolverr_get(shared_state, url, timeout=30, session_id=None):
+def flaresolverr_get(
+    shared_state,
+    url,
+    timeout=DOWNLOAD_REQUEST_TIMEOUT_SECONDS,
+    session_id=None,
+):
     """
     Core function for performing a GET request via FlareSolverr only.
     Used internally by FlareSolverrSession.get()
@@ -227,7 +247,12 @@ def flaresolverr_get(shared_state, url, timeout=30, session_id=None):
 
 
 def flaresolverr_post(
-    shared_state, url, data=None, headers=None, timeout=30, session_id=None
+    shared_state,
+    url,
+    data=None,
+    headers=None,
+    timeout=DOWNLOAD_REQUEST_TIMEOUT_SECONDS,
+    session_id=None,
 ):
     """
     Core function for performing a POST request via FlareSolverr only.
@@ -304,7 +329,7 @@ def flaresolverr_create_session(shared_state, session_id=None):
             flaresolverr_url,
             json=payload,
             headers={"Content-Type": "application/json"},
-            timeout=10,
+            timeout=SESSION_REQUEST_TIMEOUT_SECONDS,
         )
         resp.raise_for_status()
         data = resp.json()
@@ -327,7 +352,7 @@ def flaresolverr_destroy_session(shared_state, session_id):
             flaresolverr_url,
             json=payload,
             headers={"Content-Type": "application/json"},
-            timeout=10,
+            timeout=SESSION_REQUEST_TIMEOUT_SECONDS,
         )
     except Exception:
         pass
