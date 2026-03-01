@@ -50,6 +50,31 @@ def _notification_toggle_key(provider, notification_type):
     return f"{provider}_{notification_type.value}"
 
 
+def _notification_silent_key(provider, notification_type):
+    return f"{provider}_{notification_type.value}_silent"
+
+
+def _ensure_notification_defaults(notification_config):
+    existing_keys = {
+        key for key, _key_type, _value in getattr(notification_config, "__config__", [])
+    }
+    changed = False
+
+    for provider in NOTIFICATION_PROVIDERS:
+        for notification_type in NOTIFICATION_TYPES:
+            for config_key, default_value in (
+                (_notification_toggle_key(provider, notification_type), "true"),
+                (_notification_silent_key(provider, notification_type), "true"),
+            ):
+                if config_key in existing_keys:
+                    continue
+                notification_config.save(config_key, default_value)
+                existing_keys.add(config_key)
+                changed = True
+
+    return changed
+
+
 def _coerce_bool(value, default=False):
     if isinstance(value, bool):
         return value
@@ -64,21 +89,30 @@ def _coerce_bool(value, default=False):
     return bool(value)
 
 
-def _read_notification_settings():
+def _read_notification_settings(backfill_defaults=False):
     notification_config = Config("Notifications")
+    if backfill_defaults:
+        _ensure_notification_defaults(notification_config)
 
     settings = {
         "discord_webhook": notification_config.get("discord_webhook") or "",
         "telegram_bot_token": notification_config.get("telegram_bot_token") or "",
         "telegram_chat_id": notification_config.get("telegram_chat_id") or "",
         "toggles": {"discord": {}, "telegram": {}},
+        "silent": {"discord": {}, "telegram": {}},
     }
 
     for provider in NOTIFICATION_PROVIDERS:
         for notification_type in NOTIFICATION_TYPES:
-            settings["toggles"][provider][notification_type.value] = bool(
+            case_key = notification_type.value
+            settings["toggles"][provider][case_key] = bool(
                 notification_config.get(
                     _notification_toggle_key(provider, notification_type)
+                )
+            )
+            settings["silent"][provider][case_key] = bool(
+                notification_config.get(
+                    _notification_silent_key(provider, notification_type)
                 )
             )
 
@@ -105,8 +139,8 @@ def _validate_notification_provider_credentials(
     return None
 
 
-def refresh_notification_settings(shared_state):
-    settings = _read_notification_settings()
+def refresh_notification_settings(shared_state, backfill_defaults=False):
+    settings = _read_notification_settings(backfill_defaults=backfill_defaults)
 
     # Keep legacy shared_state keys for compatibility with existing callers.
     shared_state.update("webhook", settings["discord_webhook"])
@@ -115,13 +149,14 @@ def refresh_notification_settings(shared_state):
     shared_state.update("telegram_chat_id", settings["telegram_chat_id"])
 
     shared_state.update("notification_toggles", settings["toggles"])
+    shared_state.update("notification_silent", settings["silent"])
     shared_state.update("notification_settings", settings)
 
     return settings
 
 
 def initialize_notification_settings(shared_state):
-    return refresh_notification_settings(shared_state)
+    return refresh_notification_settings(shared_state, backfill_defaults=True)
 
 
 def get_notification_settings_data(shared_state):
@@ -141,6 +176,7 @@ def save_notification_settings(shared_state):
     telegram_bot_token = str(data.get("telegram_bot_token", "")).strip()
     telegram_chat_id = str(data.get("telegram_chat_id", "")).strip()
     toggles = data.get("toggles") if isinstance(data.get("toggles"), dict) else {}
+    silent = data.get("silent") if isinstance(data.get("silent"), dict) else {}
 
     validation_error = _validate_notification_provider_credentials(
         discord_webhook,
@@ -157,20 +193,35 @@ def save_notification_settings(shared_state):
 
     for provider in NOTIFICATION_PROVIDERS:
         provider_toggles = toggles.get(provider)
+        provider_silent = silent.get(provider)
         for notification_type in NOTIFICATION_TYPES:
-            config_key = _notification_toggle_key(provider, notification_type)
-            current_value = bool(notification_config.get(config_key))
+            enabled_key = _notification_toggle_key(provider, notification_type)
+            current_enabled = bool(notification_config.get(enabled_key))
             if (
                 isinstance(provider_toggles, dict)
                 and notification_type.value in provider_toggles
             ):
-                next_value = _coerce_bool(
+                next_enabled = _coerce_bool(
                     provider_toggles.get(notification_type.value),
-                    current_value,
+                    current_enabled,
                 )
             else:
-                next_value = current_value
-            notification_config.save(config_key, "true" if next_value else "false")
+                next_enabled = current_enabled
+            notification_config.save(enabled_key, "true" if next_enabled else "false")
+
+            silent_key = _notification_silent_key(provider, notification_type)
+            current_silent = bool(notification_config.get(silent_key))
+            if (
+                isinstance(provider_silent, dict)
+                and notification_type.value in provider_silent
+            ):
+                next_silent = _coerce_bool(
+                    provider_silent.get(notification_type.value),
+                    current_silent,
+                )
+            else:
+                next_silent = current_silent
+            notification_config.save(silent_key, "true" if next_silent else "false")
 
     settings = refresh_notification_settings(shared_state)
 
@@ -203,12 +254,20 @@ def send_notification_test(shared_state):
             }
         from quasarr.providers.notifications import discord
 
-        sent = discord.send(
-            shared_state,
-            title=title,
-            case=NotificationType.TEST,
-            details={"provider": "Discord"},
-        )
+        try:
+            sent = discord.send(
+                shared_state,
+                title=title,
+                case=NotificationType.TEST,
+                details={"provider": "Discord"},
+                silent=False,
+            )
+        except Exception as e:
+            info(f"Discord test notification error: {e}")
+            return {
+                "success": False,
+                "message": f"Failed to send Discord test message: {e}",
+            }
         if sent:
             return {"success": True, "message": "Discord test message sent"}
         return {
@@ -224,12 +283,20 @@ def send_notification_test(shared_state):
 
     from quasarr.providers.notifications import telegram
 
-    sent = telegram.send(
-        shared_state,
-        title=title,
-        case=NotificationType.TEST,
-        details={"provider": "Telegram"},
-    )
+    try:
+        sent = telegram.send(
+            shared_state,
+            title=title,
+            case=NotificationType.TEST,
+            details={"provider": "Telegram"},
+            silent=False,
+        )
+    except Exception as e:
+        info(f"Telegram test notification error: {e}")
+        return {
+            "success": False,
+            "message": f"Failed to send Telegram test message: {e}",
+        }
     if sent:
         return {"success": True, "message": "Telegram test message sent"}
     return {"success": False, "message": "Failed to send Telegram test message"}

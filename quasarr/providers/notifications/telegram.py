@@ -2,6 +2,8 @@
 # Quasarr
 # Project by https://github.com/rix1337
 
+from html import escape
+
 import requests
 
 from quasarr.providers.log import info
@@ -17,6 +19,14 @@ from quasarr.providers.notifications.notification_types import (
 )
 
 
+def _escape_html_text(value):
+    return escape(str(value), quote=False)
+
+
+def _escape_html_attribute(value):
+    return escape(str(value), quote=True)
+
+
 def _build_solved_section(details):
     """Build Telegram HTML lines from solved-CAPTCHA details."""
     data = build_solved_data(details)
@@ -27,36 +37,38 @@ def _build_solved_section(details):
     for solver in data.get("solvers", []):
         value_parts = []
         attempts = solver["attempts"] if solver.get("has_attempts") else 0
-        value_parts.append(f"<b>Attempts:</b> {attempts}")
+        value_parts.append(f"<b>Attempts:</b> {_escape_html_text(attempts)}")
         currency = solver.get("currency")
+        currency_text = _escape_html_text(currency) if currency else None
         if solver.get("cost") is not None:
             cost_text = format_number(solver["cost"])
             value_parts.append(
-                f"<b>Cost:</b> {cost_text} {currency}"
-                if currency
-                else f"<b>Cost:</b> {cost_text}"
+                f"<b>Cost:</b> {_escape_html_text(cost_text)} {currency_text}"
+                if currency_text
+                else f"<b>Cost:</b> {_escape_html_text(cost_text)}"
             )
         if solver.get("balance") is not None:
             balance_text = format_balance(solver["balance"])
             value_parts.append(
-                f"<b>Balance:</b> {balance_text} {currency}"
-                if currency
-                else f"<b>Balance:</b> {balance_text}"
+                f"<b>Balance:</b> {_escape_html_text(balance_text)} {currency_text}"
+                if currency_text
+                else f"<b>Balance:</b> {_escape_html_text(balance_text)}"
             )
         if value_parts:
             parts.append(
-                f"<b>{solver['solver_display']}</b> " + " | ".join(value_parts)
+                f"<b>{_escape_html_text(solver['solver_display'])}</b> "
+                + " | ".join(value_parts)
             )
 
     if data.get("duration"):
-        parts.append(f"<b>Duration</b> {data['duration']}")
+        parts.append(f"<b>Duration</b> {_escape_html_text(data['duration'])}")
 
     return parts
 
 
 def _build_text(shared_state, title, case, details, source):
     """Build an HTML-formatted Telegram message for the given notification case."""
-    parts = [f"<b>{title}</b>"]
+    parts = [f"<b>{_escape_html_text(title)}</b>"]
 
     if case == NotificationType.UNPROTECTED:
         parts.append("No CAPTCHA required. Links were added directly!")
@@ -76,8 +88,9 @@ def _build_text(shared_state, title, case, details, source):
     elif case == NotificationType.CAPTCHA:
         parts.append("Download will proceed, once the CAPTCHA has been solved.")
         captcha_url = f"{shared_state.values['external_address']}/captcha"
+        safe_captcha_url = _escape_html_attribute(captcha_url)
         parts.append(
-            f'<b>Solve CAPTCHA</b> Open <a href="{captcha_url}">this link</a>'
+            f'<b>Solve CAPTCHA</b> Open <a href="{safe_captcha_url}">this link</a>'
             " to solve the CAPTCHA."
         )
         if not shared_state.values.get("helper_active"):
@@ -86,11 +99,18 @@ def _build_text(shared_state, title, case, details, source):
                 "Sponsors get automated CAPTCHA solutions!</a>"
             )
     elif case == NotificationType.QUASARR_UPDATE:
-        parts.append(f"Please update to {details['version']} as soon as possible!")
-        if details:
+        version = "latest"
+        link = ""
+        if isinstance(details, dict):
+            version = details.get("version") or version
+            link = details.get("link") or ""
+        safe_version = _escape_html_text(version)
+        parts.append(f"Please update to {safe_version} as soon as possible!")
+        if link:
+            safe_link = _escape_html_attribute(link)
             parts.append(
-                f'<b>Release notes at: </b> <a href="{details["link"]}">'
-                f"GitHub.com: rix1337/Quasarr/{details['version']}</a>"
+                f'<b>Release notes at: </b> <a href="{safe_link}">'
+                f"GitHub.com: rix1337/Quasarr/{safe_version}</a>"
             )
     elif case == NotificationType.TEST:
         parts.append("This is a test notification from Quasarr UI configuration.")
@@ -99,12 +119,23 @@ def _build_text(shared_state, title, case, details, source):
         return None
 
     if source and source.startswith("http"):
-        parts.append(f'<b>Source</b> <a href="{source}">View release details here</a>')
+        safe_source = _escape_html_attribute(source)
+        parts.append(
+            f'<b>Source</b> <a href="{safe_source}">View release details here</a>'
+        )
 
     return "\n\n".join(parts)
 
 
-def send(shared_state, title, case, details=None, source=None, image_url=None):
+def send(
+    shared_state,
+    title,
+    case,
+    details=None,
+    source=None,
+    image_url=None,
+    silent=True,
+):
     """Build and send a Telegram notification. Returns True on success."""
     notification_type = normalize_notification_type(case)
     if notification_type is None:
@@ -127,6 +158,7 @@ def send(shared_state, title, case, details=None, source=None, image_url=None):
             "photo": image_url,
             "caption": text,
             "parse_mode": "HTML",
+            "disable_notification": bool(silent),
         }
     else:
         api_url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
@@ -134,6 +166,7 @@ def send(shared_state, title, case, details=None, source=None, image_url=None):
             "chat_id": chat_id,
             "text": text,
             "parse_mode": "HTML",
+            "disable_notification": bool(silent),
             "disable_web_page_preview": not bool(image_url),
         }
 

@@ -6,6 +6,7 @@ import json
 
 import requests
 
+from quasarr.constants import SUPPRESS_NOTIFICATIONS
 from quasarr.providers.log import info
 from quasarr.providers.notifications._helpers import (
     QUASARR_AVATAR,
@@ -145,7 +146,15 @@ def _build_embed(shared_state, title, case, details, source, image_url):
     return embed
 
 
-def send(shared_state, title, case, details=None, source=None, image_url=None):
+def send(
+    shared_state,
+    title,
+    case,
+    details=None,
+    source=None,
+    image_url=None,
+    silent=True,
+):
     """Build and send a Discord webhook notification. Returns True on success."""
     notification_type = normalize_notification_type(case)
     if notification_type is None:
@@ -167,6 +176,9 @@ def send(shared_state, title, case, details=None, source=None, image_url=None):
         "avatar_url": QUASARR_AVATAR,
         "embeds": [embed],
     }
+
+    if silent:
+        data["flags"] = SUPPRESS_NOTIFICATIONS
 
     response = requests.post(
         webhook_url,

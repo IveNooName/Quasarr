@@ -170,6 +170,9 @@ def get_api(shared_state_dict, shared_state_lock):
         notification_toggles = notification_settings.get("toggles")
         if not isinstance(notification_toggles, dict):
             notification_toggles = {"discord": {}, "telegram": {}}
+        notification_silent = notification_settings.get("silent")
+        if not isinstance(notification_silent, dict):
+            notification_silent = {"discord": {}, "telegram": {}}
 
         discord_webhook = shared_state.values.get("discord") or ""
         telegram_bot_token = shared_state.values.get("telegram_bot_token") or ""
@@ -181,17 +184,37 @@ def get_api(shared_state_dict, shared_state_lock):
 
         def render_notification_toggle_rows(provider):
             provider_toggles = notification_toggles.get(provider, {})
+            provider_silent = notification_silent.get(provider, {})
             rows = []
+            rows.append(
+                """
+                    <thead>
+                        <tr>
+                            <th>Notification</th>
+                            <th class=\"toggle-cell\">Enabled</th>
+                            <th class=\"toggle-cell\">Silent</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                """
+            )
             for case_key, case_label in notification_cases:
-                checked = "checked" if provider_toggles.get(case_key, True) else ""
+                enabled_checked = (
+                    "checked" if provider_toggles.get(case_key, True) else ""
+                )
+                silent_checked = (
+                    "checked" if provider_silent.get(case_key, True) else ""
+                )
                 rows.append(
                     f"""
                     <tr>
                         <td>{case_label}</td>
-                        <td class="toggle-cell"><input type="checkbox" id="notif-{provider}-{case_key}" {checked}></td>
+                        <td class="toggle-cell"><input type="checkbox" id="notif-{provider}-{case_key}" {enabled_checked}></td>
+                        <td class="toggle-cell"><input type="checkbox" id="notif-{provider}-{case_key}-silent" {silent_checked}></td>
                     </tr>
                     """
                 )
+            rows.append("</tbody>")
             return (
                 '<table class="notification-toggle-table">' + "".join(rows) + "</table>"
             )
@@ -317,10 +340,10 @@ def get_api(shared_state_dict, shared_state_lock):
 
         <div class="section">
             <details id="notificationsDetails">
-                <summary id="notificationsSummary"><img src="{images.notifications}" type="image/webp" alt="Notifications logo" class="inline-icon"/> Notifications Configuration</summary>
+                <summary id="notificationsSummary">🔔 Notifications Configuration</summary>
                 <div class="api-settings">
                     <p class="api-hint">
-                        Configure provider credentials, choose notification types per provider, and send a test message.
+                        Configure provider credentials, choose notification types per provider, set silent delivery, and send a test message.
                     </p>
 
                     <div class="notification-provider-card">
@@ -548,13 +571,22 @@ def get_api(shared_state_dict, shared_state_lock):
                 border-collapse: collapse;
                 font-size: 0.9em;
             }}
+            .notification-toggle-table th,
             .notification-toggle-table td {{
                 padding: 4px 0;
                 text-align: left;
             }}
+            .notification-toggle-table th {{
+                font-size: 0.85em;
+                font-weight: 600;
+            }}
             .notification-toggle-table .toggle-cell {{
-                width: 30px;
-                text-align: right;
+                width: 64px;
+                text-align: center;
+                white-space: nowrap;
+            }}
+            .notification-toggle-table .toggle-cell input {{
+                margin: 0;
             }}
             .notification-status {{
                 min-height: 1.2em;
@@ -810,14 +842,18 @@ def get_api(shared_state_dict, shared_state_lock):
                     discord_webhook: document.getElementById('notification-discord-webhook').value.trim(),
                     telegram_bot_token: document.getElementById('notification-telegram-token').value.trim(),
                     telegram_chat_id: document.getElementById('notification-telegram-chat-id').value.trim(),
-                    toggles: {{}}
+                    toggles: {{}},
+                    silent: {{}}
                 }};
 
                 ['discord', 'telegram'].forEach(function(provider) {{
                     payload.toggles[provider] = {{}};
+                    payload.silent[provider] = {{}};
                     notificationCases.forEach(function(notificationCase) {{
                         var input = document.getElementById('notif-' + provider + '-' + notificationCase);
+                        var silentInput = document.getElementById('notif-' + provider + '-' + notificationCase + '-silent');
                         payload.toggles[provider][notificationCase] = !!(input && input.checked);
+                        payload.silent[provider][notificationCase] = !!(silentInput && silentInput.checked);
                     }});
                 }});
 

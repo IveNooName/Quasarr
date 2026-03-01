@@ -207,7 +207,7 @@ quasarr
 Configure notifications in **Web UI → Notifications Configuration**:
 - Set provider credentials
 - Choose notification types per provider
-- Send a provider-specific test message directly from the UI
+- *Silent* notifications won't play any sound
 
 ## Discord
 

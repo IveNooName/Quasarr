@@ -22,6 +22,18 @@ def _provider_case_enabled(shared_state, provider, notification_type):
     return bool(provider_toggles.get(notification_type.value, True))
 
 
+def _provider_case_silent(shared_state, provider, notification_type):
+    silent_settings = shared_state.values.get("notification_silent")
+    if not isinstance(silent_settings, dict):
+        return True
+
+    provider_silent = silent_settings.get(provider)
+    if not isinstance(provider_silent, dict):
+        return True
+
+    return bool(provider_silent.get(notification_type.value, True))
+
+
 def send_notification(
     shared_state, title, case, imdb_id=None, details=None, source=None
 ):
@@ -63,6 +75,9 @@ def send_notification(
     if has_discord and _provider_case_enabled(
         shared_state, "discord", notification_type
     ):
+        discord_silent = _provider_case_silent(
+            shared_state, "discord", notification_type
+        )
         try:
             if discord.send(
                 shared_state,
@@ -71,6 +86,7 @@ def send_notification(
                 details=details,
                 source=source,
                 image_url=image_url,
+                silent=discord_silent,
             ):
                 any_success = True
         except Exception as e:
@@ -79,6 +95,9 @@ def send_notification(
     if has_telegram and _provider_case_enabled(
         shared_state, "telegram", notification_type
     ):
+        telegram_silent = _provider_case_silent(
+            shared_state, "telegram", notification_type
+        )
         try:
             if telegram.send(
                 shared_state,
@@ -87,6 +106,7 @@ def send_notification(
                 details=details,
                 source=source,
                 image_url=image_url,
+                silent=telegram_silent,
             ):
                 any_success = True
         except Exception as e:

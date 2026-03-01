@@ -45,6 +45,15 @@ class Config(object):
                 for provider in ("discord", "telegram")
                 for notification_type in get_user_configurable_notification_types()
             ],
+            *[
+                (
+                    f"{provider}_{notification_type.value}_silent",
+                    "bool",
+                    "true",
+                )
+                for provider in ("discord", "telegram")
+                for notification_type in get_user_configurable_notification_types()
+            ],
         ],
         "AL": [("user", "secret", ""), ("password", "secret", "")],
         "DD": [("user", "secret", ""), ("password", "secret", "")],
