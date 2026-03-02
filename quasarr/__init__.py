@@ -23,7 +23,7 @@ from quasarr.providers.log import (
     log_level_names,
 )
 from quasarr.providers.notifications import send_notification
-from quasarr.providers.notifications.notification_types import NotificationType
+from quasarr.providers.notifications.helpers.notification_types import NotificationType
 from quasarr.providers.utils import (
     Unbuffered,
     check_flaresolverr,

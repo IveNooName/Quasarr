@@ -12,9 +12,6 @@ from Cryptodome.Random import get_random_bytes
 from Cryptodome.Util.Padding import pad
 
 from quasarr.providers import shared_state
-from quasarr.providers.notifications.notification_types import (
-    get_user_configurable_notification_types,
-)
 from quasarr.search.sources.helpers import get_hostnames
 from quasarr.storage.sqlite_database import DataBase
 
@@ -40,20 +37,6 @@ class Config(object):
             ("discord_webhook", "secret", ""),
             ("telegram_bot_token", "secret", ""),
             ("telegram_chat_id", "secret", ""),
-            *[
-                (f"{provider}_{notification_type.value}", "bool", "true")
-                for provider in ("discord", "telegram")
-                for notification_type in get_user_configurable_notification_types()
-            ],
-            *[
-                (
-                    f"{provider}_{notification_type.value}_silent",
-                    "bool",
-                    "true",
-                )
-                for provider in ("discord", "telegram")
-                for notification_type in get_user_configurable_notification_types()
-            ],
         ],
         "AL": [("user", "secret", ""), ("password", "secret", "")],
         "DD": [("user", "secret", ""), ("password", "secret", "")],
@@ -86,6 +69,29 @@ class Config(object):
             self._config.set(section, key, value)
         with open(self._configfile, "w") as configfile:
             self._config.write(configfile)
+
+    @classmethod
+    def _get_default_keys(cls, section):
+        return {
+            key.lower()
+            for key, _key_type, _value in cls._DEFAULT_CONFIG.get(section, [])
+        }
+
+    @classmethod
+    def _get_known_legacy_keys(cls, section):
+        if section != "Notifications":
+            return set()
+
+        from quasarr.providers.notifications.helpers.notification_types import (
+            get_user_configurable_notification_types,
+        )
+
+        legacy_keys = set()
+        for provider in ("discord", "telegram"):
+            for notification_type in get_user_configurable_notification_types():
+                legacy_keys.add(f"{provider}_{notification_type.value}")
+                legacy_keys.add(f"{provider}_{notification_type.value}_silent")
+        return legacy_keys
 
     def _get_encryption_params(self):
         crypt_key = DataBase("secrets").retrieve("key")
@@ -121,6 +127,10 @@ class Config(object):
             (key, "", self._config.get(section, key))
             for key in self._config.options(section)
         ]
+
+    def _write_config(self):
+        with open(self._configfile, "w") as configfile:
+            self._config.write(configfile)
 
     def _get_from_config(self, scope, key):
         res = [param[2] for param in scope if param[0] == key]
@@ -165,6 +175,32 @@ class Config(object):
 
     def get(self, key):
         return self._get_from_config(self.__config__, key)
+
+    def delete(self, key):
+        if self._config.has_option(self._section, key):
+            self._config.remove_option(self._section, key)
+            self._write_config()
+            self.__config__ = self._read_config(self._section)
+        return
+
+    def delete_legacy_keys(self, keys=None):
+        candidate_keys = set(
+            self._get_known_legacy_keys(self._section) if keys is None else keys
+        )
+        if not candidate_keys:
+            return []
+
+        default_keys = self._get_default_keys(self._section)
+        existing_keys = {key.lower() for key in self._config.options(self._section)}
+        keys_to_delete = sorted((candidate_keys - default_keys) & existing_keys)
+        if not keys_to_delete:
+            return []
+
+        for key in keys_to_delete:
+            self._config.remove_option(self._section, key)
+        self._write_config()
+        self.__config__ = self._read_config(self._section)
+        return keys_to_delete
 
 
 def get_clean_hostnames(shared_state):

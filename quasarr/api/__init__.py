@@ -22,7 +22,7 @@ from quasarr.providers.html_templates import (
     render_centered_html,
     render_success,
 )
-from quasarr.providers.notifications.notification_types import (
+from quasarr.providers.notifications.helpers.notification_types import (
     get_notification_type_label,
     get_user_configurable_notification_types,
 )
@@ -174,9 +174,9 @@ def get_api(shared_state_dict, shared_state_lock):
         if not isinstance(notification_silent, dict):
             notification_silent = {"discord": {}, "telegram": {}}
 
-        discord_webhook = shared_state.values.get("discord") or ""
-        telegram_bot_token = shared_state.values.get("telegram_bot_token") or ""
-        telegram_chat_id = shared_state.values.get("telegram_chat_id") or ""
+        discord_webhook = notification_settings.get("discord_webhook") or ""
+        telegram_bot_token = notification_settings.get("telegram_bot_token") or ""
+        telegram_chat_id = notification_settings.get("telegram_chat_id") or ""
 
         notification_cases_json = json.dumps(
             [case_key for case_key, _ in notification_cases]
@@ -185,19 +185,11 @@ def get_api(shared_state_dict, shared_state_lock):
         def render_notification_toggle_rows(provider):
             provider_toggles = notification_toggles.get(provider, {})
             provider_silent = notification_silent.get(provider, {})
-            rows = []
-            rows.append(
-                """
-                    <thead>
-                        <tr>
-                            <th>Notification</th>
-                            <th class=\"toggle-cell\">Enabled</th>
-                            <th class=\"toggle-cell\">Silent</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                """
-            )
+            cells = [
+                '<div class="notification-toggle-header">Notification</div>',
+                '<div class="notification-toggle-header toggle-cell">Enabled</div>',
+                '<div class="notification-toggle-header toggle-cell">Silent</div>',
+            ]
             for case_key, case_label in notification_cases:
                 enabled_checked = (
                     "checked" if provider_toggles.get(case_key, True) else ""
@@ -205,19 +197,14 @@ def get_api(shared_state_dict, shared_state_lock):
                 silent_checked = (
                     "checked" if provider_silent.get(case_key, True) else ""
                 )
-                rows.append(
+                cells.append(
                     f"""
-                    <tr>
-                        <td>{case_label}</td>
-                        <td class="toggle-cell"><input type="checkbox" id="notif-{provider}-{case_key}" {enabled_checked}></td>
-                        <td class="toggle-cell"><input type="checkbox" id="notif-{provider}-{case_key}-silent" {silent_checked}></td>
-                    </tr>
+                    <div class="notification-toggle-label">{case_label}</div>
+                    <div class="notification-toggle-input toggle-cell"><input type="checkbox" id="notif-{provider}-{case_key}" {enabled_checked}></div>
+                    <div class="notification-toggle-input toggle-cell"><input type="checkbox" id="notif-{provider}-{case_key}-silent" {silent_checked}></div>
                     """
                 )
-            rows.append("</tbody>")
-            return (
-                '<table class="notification-toggle-table">' + "".join(rows) + "</table>"
-            )
+            return '<div class="notification-toggle-grid">' + "".join(cells) + "</div>"
 
         discord_toggle_rows = render_notification_toggle_rows("discord")
         telegram_toggle_rows = render_notification_toggle_rows("telegram")
@@ -566,27 +553,34 @@ def get_api(shared_state_dict, shared_state_lock):
                 margin-top: 6px;
                 margin-bottom: 10px;
             }}
-            .notification-toggle-table {{
-                width: 100%;
-                border-collapse: collapse;
+            .notification-toggle-grid {{
+                display: grid;
+                grid-template-columns: minmax(0, 1fr) 104px 104px;
+                align-items: center;
+                column-gap: 6px;
+                row-gap: 10px;
                 font-size: 0.9em;
             }}
-            .notification-toggle-table th,
-            .notification-toggle-table td {{
-                padding: 4px 0;
-                text-align: left;
-            }}
-            .notification-toggle-table th {{
+            .notification-toggle-grid .notification-toggle-header {{
                 font-size: 0.85em;
                 font-weight: 600;
+                padding-bottom: 4px;
             }}
-            .notification-toggle-table .toggle-cell {{
-                width: 64px;
+            .notification-toggle-grid .notification-toggle-label {{
+                text-align: left;
+            }}
+            .notification-toggle-grid .toggle-cell {{
                 text-align: center;
                 white-space: nowrap;
             }}
-            .notification-toggle-table .toggle-cell input {{
-                margin: 0;
+            .notification-toggle-grid .notification-toggle-input {{
+                display: flex;
+                justify-content: center;
+                align-items: center;
+            }}
+            .notification-toggle-grid .toggle-cell input {{
+                display: block;
+                margin: 0 auto;
             }}
             .notification-status {{
                 min-height: 1.2em;

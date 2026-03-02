@@ -6,171 +6,82 @@ import json
 
 import requests
 
-from quasarr.constants import SUPPRESS_NOTIFICATIONS
+from quasarr.constants import QUASARR_AVATAR, SUPPRESS_NOTIFICATIONS
 from quasarr.providers.log import info
-from quasarr.providers.notifications.helpers import (
-    QUASARR_AVATAR,
-    SPONSORS_HELPER_URL,
-    build_solved_data,
-    format_balance,
-    format_number,
+from quasarr.providers.notifications.helpers.abstract_notification_formatter import (
+    AbstractNotificationFormatter,
 )
-from quasarr.providers.notifications.notification_types import (
-    NotificationType,
-    normalize_notification_type,
+from quasarr.providers.notifications.helpers.notification_message import (
+    NotificationFactsEntry,
+    NotificationLinkEntry,
+    NotificationMessage,
+    NotificationTextEntry,
+    NotificationValueEntry,
 )
 
 
-def _build_solved_fields(details):
-    """Build Discord embed fields from solved-CAPTCHA details."""
-    data = build_solved_data(details)
-    if data is None:
-        return None
+class DiscordNotificationFormatter(AbstractNotificationFormatter):
+    @staticmethod
+    def _format_link(text, url, link_text=None):
+        target_text = link_text or text
+        if target_text and target_text in text:
+            return text.replace(target_text, f"[{target_text}]({url})", 1)
+        return f"[{text}]({url})"
 
-    fields = []
-    for solver in data.get("solvers", []):
-        value_parts = []
-        attempts = solver["attempts"] if solver.get("has_attempts") else 0
-        value_parts.append(f"**Attempts:** {attempts}")
-        currency = solver.get("currency")
-        if solver.get("cost") is not None:
-            cost_text = format_number(solver["cost"])
-            value_parts.append(
-                f"**Cost:** {cost_text} {currency}"
-                if currency
-                else f"**Cost:** {cost_text}"
-            )
-        if solver.get("balance") is not None:
-            balance_text = format_balance(solver["balance"])
-            value_parts.append(
-                f"**Balance:** {balance_text} {currency}"
-                if currency
-                else f"**Balance:** {balance_text}"
-            )
-        if value_parts:
-            fields.append(
-                {
-                    "name": solver["solver_display"],
-                    "value": " | ".join(value_parts),
-                }
-            )
+    def render_text_entry(self, entry: NotificationTextEntry):
+        return {"name": entry.title, "value": entry.text}
 
-    if data.get("duration"):
-        fields.append({"name": "Duration", "value": data["duration"]})
+    def render_link_entry(self, entry: NotificationLinkEntry):
+        return {
+            "name": entry.title,
+            "value": self._format_link(entry.text, entry.url, entry.link_text),
+        }
 
-    return fields or None
+    def render_facts_entry(self, entry: NotificationFactsEntry):
+        return {
+            "name": entry.title,
+            "value": " | ".join(
+                f"**{fact.label}:** {fact.value}" for fact in entry.facts
+            ),
+        }
 
+    def render_value_entry(self, entry: NotificationValueEntry):
+        return {"name": entry.title, "value": entry.value}
 
-def _build_embed(shared_state, title, case, details, source, image_url):
-    """Build a Discord embed dict for the given notification case."""
-    if case == NotificationType.UNPROTECTED:
-        description = "No CAPTCHA required. Links were added directly!"
-        fields = None
-    elif case == NotificationType.SOLVED:
-        description = "CAPTCHA solved by SponsorsHelper!"
-        fields = _build_solved_fields(details)
-    elif case == NotificationType.FAILED:
-        description = (
-            "SponsorsHelper failed to solve the CAPTCHA! "
-            "Package marked as failed for deletion."
-        )
-        fields = None
-    elif case == NotificationType.DISABLED:
-        description = (
-            "SponsorsHelper failed to solve the CAPTCHA! "
-            "Please solve it manually to proceed."
-        )
-        fields = None
-    elif case == NotificationType.CAPTCHA:
-        description = "Download will proceed, once the CAPTCHA has been solved."
-        captcha_url = f"{shared_state.values['external_address']}/captcha"
-        fields = [
-            {
-                "name": "Solve CAPTCHA",
-                "value": f"Open [this link]({captcha_url}) to solve the CAPTCHA.",
-            }
-        ]
-        if not shared_state.values.get("helper_active"):
-            fields.append(
-                {
-                    "name": "SponsorsHelper",
-                    "value": (
-                        "[Sponsors get automated CAPTCHA solutions!]"
-                        f"({SPONSORS_HELPER_URL})"
-                    ),
-                }
-            )
-    elif case == NotificationType.QUASARR_UPDATE:
-        description = f"Please update to {details['version']} as soon as possible!"
-        if details:
-            fields = [
-                {
-                    "name": "Release notes at: ",
-                    "value": (
-                        f"[GitHub.com: rix1337/Quasarr/{details['version']}]"
-                        f"({details['link']})"
-                    ),
-                }
-            ]
-        else:
-            fields = None
-    elif case == NotificationType.TEST:
-        description = "This is a test notification from Quasarr UI configuration."
-        fields = None
-    else:
-        info(f"Unknown notification case: {case}")
-        return None
+    def render_message(self, message: NotificationMessage):
+        embed = {"title": message.title, "description": message.description}
+        fields = self.render_entries(message.entries)
+        if fields:
+            embed["fields"] = fields
 
-    if source and source.startswith("http"):
-        if not fields:
-            fields = []
-        fields.append(
-            {
-                "name": "Source",
-                "value": f"[View release details here]({source})",
-            }
-        )
+        if message.image_url:
+            poster_object = {"url": message.image_url}
+            embed["thumbnail"] = poster_object
+            embed["image"] = poster_object
+        elif message.thumbnail_url:
+            embed["thumbnail"] = {"url": message.thumbnail_url}
 
-    embed = {"title": title, "description": description}
-
-    if fields:
-        embed["fields"] = [{"name": f["name"], "value": f["value"]} for f in fields]
-
-    if image_url:
-        poster_object = {"url": image_url}
-        embed["thumbnail"] = poster_object
-        embed["image"] = poster_object
-    elif case == NotificationType.QUASARR_UPDATE:
-        embed["thumbnail"] = {"url": QUASARR_AVATAR}
-
-    return embed
+        return embed
 
 
-def send(
-    shared_state,
-    title,
-    case,
-    details=None,
-    source=None,
-    image_url=None,
-    silent=True,
-):
-    """Build and send a Discord webhook notification. Returns True on success."""
-    notification_type = normalize_notification_type(case)
-    if notification_type is None:
-        info(f"Unknown notification case: {case}")
-        return False
+def _get_discord_webhook(shared_state):
+    settings = shared_state.values.get("notification_settings")
+    if not isinstance(settings, dict):
+        return ""
+    return str(settings.get("discord_webhook") or "").strip()
 
-    webhook_url = shared_state.values.get("discord")
+
+def send(shared_state, message, silent=True):
+    """Send a rendered Discord webhook notification. Returns True on success."""
+    webhook_url = _get_discord_webhook(shared_state)
     if not webhook_url:
         return False
 
-    embed = _build_embed(
-        shared_state, title, notification_type, details, source, image_url
-    )
-    if embed is None:
+    if not isinstance(message, NotificationMessage):
+        info(f"Invalid Discord notification payload: {type(message).__name__}")
         return False
 
+    embed = DiscordNotificationFormatter().render_message(message)
     data = {
         "username": "Quasarr",
         "avatar_url": QUASARR_AVATAR,

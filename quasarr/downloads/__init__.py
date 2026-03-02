@@ -16,7 +16,7 @@ from quasarr.downloads.sources import get_sources as get_download_sources
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
 from quasarr.providers.log import info, warn
 from quasarr.providers.notifications import send_notification
-from quasarr.providers.notifications.notification_types import NotificationType
+from quasarr.providers.notifications.helpers.notification_types import NotificationType
 from quasarr.providers.statistics import StatsHelper
 from quasarr.providers.utils import (
     download_package,

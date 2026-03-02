@@ -336,5 +336,11 @@ MONTHS_MAP = {
 # DISCORD / NOTIFICATIONS
 # ==============================================================================
 
+# Shared notification branding/assets
+QUASARR_AVATAR = "https://raw.githubusercontent.com/rix1337/Quasarr/main/Quasarr.png"
+SPONSORS_HELPER_URL = (
+    "https://github.com/rix1337/Quasarr?tab=readme-ov-file#sponsorshelper"
+)
+
 # Discord message flag for suppressing notifications
 SUPPRESS_NOTIFICATIONS = 1 << 12  # 4096

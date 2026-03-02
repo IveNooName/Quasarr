@@ -4,14 +4,22 @@
 
 from quasarr.providers.log import info
 from quasarr.providers.notifications.helpers import resolve_poster_url
-from quasarr.providers.notifications.notification_types import (
+from quasarr.providers.notifications.helpers.message_builder import (
+    build_notification_message,
+)
+from quasarr.providers.notifications.helpers.notification_types import (
     NotificationType,
     normalize_notification_type,
 )
 
 
+def _get_notification_settings(shared_state):
+    settings = shared_state.values.get("notification_settings")
+    return settings if isinstance(settings, dict) else {}
+
+
 def _provider_case_enabled(shared_state, provider, notification_type):
-    toggles = shared_state.values.get("notification_toggles")
+    toggles = _get_notification_settings(shared_state).get("toggles")
     if not isinstance(toggles, dict):
         return True
 
@@ -23,7 +31,7 @@ def _provider_case_enabled(shared_state, provider, notification_type):
 
 
 def _provider_case_silent(shared_state, provider, notification_type):
-    silent_settings = shared_state.values.get("notification_silent")
+    silent_settings = _get_notification_settings(shared_state).get("silent")
     if not isinstance(silent_settings, dict):
         return True
 
@@ -57,9 +65,10 @@ def send_notification(
         info(f"Unknown notification case: {case}")
         return False
 
-    has_discord = bool(shared_state.values.get("discord"))
-    has_telegram = bool(shared_state.values.get("telegram_bot_token")) and bool(
-        shared_state.values.get("telegram_chat_id")
+    notification_settings = _get_notification_settings(shared_state)
+    has_discord = bool(notification_settings.get("discord_webhook"))
+    has_telegram = bool(notification_settings.get("telegram_bot_token")) and bool(
+        notification_settings.get("telegram_chat_id")
     )
 
     if not has_discord and not has_telegram:
@@ -70,6 +79,17 @@ def send_notification(
     if notification_type in (NotificationType.UNPROTECTED, NotificationType.CAPTCHA):
         image_url = resolve_poster_url(shared_state, title, imdb_id)
 
+    message = build_notification_message(
+        shared_state,
+        title,
+        notification_type,
+        details=details,
+        source=source,
+        image_url=image_url,
+    )
+    if message is None:
+        return False
+
     any_success = False
 
     if has_discord and _provider_case_enabled(
@@ -79,15 +99,7 @@ def send_notification(
             shared_state, "discord", notification_type
         )
         try:
-            if discord.send(
-                shared_state,
-                title,
-                notification_type,
-                details=details,
-                source=source,
-                image_url=image_url,
-                silent=discord_silent,
-            ):
+            if discord.send(shared_state, message, silent=discord_silent):
                 any_success = True
         except Exception as e:
             info(f"Discord notification error: {e}")
@@ -99,15 +111,7 @@ def send_notification(
             shared_state, "telegram", notification_type
         )
         try:
-            if telegram.send(
-                shared_state,
-                title,
-                notification_type,
-                details=details,
-                source=source,
-                image_url=image_url,
-                silent=telegram_silent,
-            ):
+            if telegram.send(shared_state, message, silent=telegram_silent):
                 any_success = True
         except Exception as e:
             info(f"Telegram notification error: {e}")
