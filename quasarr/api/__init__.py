@@ -195,13 +195,23 @@ def get_api(shared_state_dict, shared_state_lock):
                     "checked" if provider_toggles.get(case_key, True) else ""
                 )
                 silent_checked = (
-                    "checked" if provider_silent.get(case_key, True) else ""
+                    "checked" if provider_silent.get(case_key, False) else ""
                 )
                 cells.append(
                     f"""
                     <div class="notification-toggle-label">{case_label}</div>
-                    <div class="notification-toggle-input toggle-cell"><input type="checkbox" id="notif-{provider}-{case_key}" {enabled_checked}></div>
-                    <div class="notification-toggle-input toggle-cell"><input type="checkbox" id="notif-{provider}-{case_key}-silent" {silent_checked}></div>
+                    <div class="notification-toggle-input toggle-cell">
+                        <label class="notification-toggle-control">
+                            <input type="checkbox" id="notif-{provider}-{case_key}" {enabled_checked}>
+                            <span class="notification-toggle-box" aria-hidden="true"></span>
+                        </label>
+                    </div>
+                    <div class="notification-toggle-input toggle-cell">
+                        <label class="notification-toggle-control">
+                            <input type="checkbox" id="notif-{provider}-{case_key}-silent" {silent_checked}>
+                            <span class="notification-toggle-box" aria-hidden="true"></span>
+                        </label>
+                    </div>
                     """
                 )
             return '<div class="notification-toggle-grid">' + "".join(cells) + "</div>"
@@ -330,7 +340,7 @@ def get_api(shared_state_dict, shared_state_lock):
                 <summary id="notificationsSummary">🔔 Notifications Configuration</summary>
                 <div class="api-settings">
                     <p class="api-hint">
-                        Configure provider credentials, choose notification types per provider, set silent delivery, and send a test message.
+                        It is recommended to configure one provider below for an optimal user experience.
                     </p>
 
                     <div class="notification-provider-card">
@@ -555,9 +565,9 @@ def get_api(shared_state_dict, shared_state_lock):
             }}
             .notification-toggle-grid {{
                 display: grid;
-                grid-template-columns: minmax(0, 1fr) 104px 104px;
+                grid-template-columns: minmax(0, 1fr) repeat(2, 96px);
                 align-items: center;
-                column-gap: 6px;
+                column-gap: 24px;
                 row-gap: 10px;
                 font-size: 0.9em;
             }}
@@ -565,22 +575,95 @@ def get_api(shared_state_dict, shared_state_lock):
                 font-size: 0.85em;
                 font-weight: 600;
                 padding-bottom: 4px;
+                min-width: 0;
             }}
             .notification-toggle-grid .notification-toggle-label {{
                 text-align: left;
+                min-width: 0;
             }}
+            .notification-toggle-grid .notification-toggle-header.toggle-cell,
             .notification-toggle-grid .toggle-cell {{
                 text-align: center;
                 white-space: nowrap;
+                justify-self: center;
+                width: 96px;
             }}
             .notification-toggle-grid .notification-toggle-input {{
                 display: flex;
-                justify-content: center;
                 align-items: center;
+                justify-content: center;
+                min-height: 24px;
             }}
-            .notification-toggle-grid .toggle-cell input {{
+            .notification-toggle-grid .notification-toggle-control {{
+                position: relative;
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                width: 18px;
+                height: 18px;
+                cursor: pointer;
+            }}
+            .notification-toggle-grid .notification-toggle-control input {{
+                position: absolute;
+                inset: 0;
+                width: 18px;
+                height: 18px;
+                margin: 0;
+                opacity: 0;
+                cursor: pointer;
+            }}
+            .notification-toggle-grid .notification-toggle-box {{
+                position: relative;
+                box-sizing: border-box;
                 display: block;
-                margin: 0 auto;
+                width: 18px;
+                height: 18px;
+                border: 2px solid var(--input-border, #7a7a7a);
+                border-radius: 4px;
+                background: var(--card-bg, #f8f9fa);
+                transition: background-color 0.15s ease, border-color 0.15s ease;
+            }}
+            .notification-toggle-grid .notification-toggle-control input:checked + .notification-toggle-box {{
+                background: var(--btn-primary-bg, #1a73e8);
+                border-color: var(--btn-primary-bg, #1a73e8);
+            }}
+            .notification-toggle-grid .notification-toggle-control input:checked + .notification-toggle-box::after {{
+                content: "";
+                position: absolute;
+                left: 5px;
+                top: 1px;
+                width: 4px;
+                height: 9px;
+                border: solid #fff;
+                border-width: 0 2px 2px 0;
+                transform: rotate(45deg);
+            }}
+            .notification-toggle-grid .notification-toggle-control input:focus-visible + .notification-toggle-box {{
+                outline: 2px solid var(--link-color, #0066cc);
+                outline-offset: 2px;
+            }}
+            @media (max-width: 500px) {{
+                .notification-toggle-grid {{
+                    grid-template-columns: minmax(0, 1fr) repeat(2, 72px);
+                    column-gap: 12px;
+                }}
+                .notification-toggle-grid .notification-toggle-header.toggle-cell,
+                .notification-toggle-grid .toggle-cell {{
+                    width: 72px;
+                }}
+            }}
+            @media (max-width: 380px) {{
+                .notification-toggle-grid {{
+                    grid-template-columns: minmax(0, 1fr) repeat(2, 64px);
+                    column-gap: 8px;
+                }}
+                .notification-toggle-grid .notification-toggle-header {{
+                    font-size: 0.8em;
+                }}
+                .notification-toggle-grid .notification-toggle-header.toggle-cell,
+                .notification-toggle-grid .toggle-cell {{
+                    width: 64px;
+                }}
             }}
             .notification-status {{
                 min-height: 1.2em;
