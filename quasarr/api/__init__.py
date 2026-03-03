@@ -2,6 +2,8 @@
 # Quasarr
 # Project by https://github.com/rix1337
 
+import json
+
 from bottle import Bottle
 
 import quasarr.providers.html_images as images
@@ -13,12 +15,21 @@ from quasarr.api.packages import setup_packages_routes
 from quasarr.api.sponsors_helper import setup_sponsors_helper_routes
 from quasarr.api.statistics import setup_statistics
 from quasarr.providers import shared_state
-from quasarr.providers.auth import add_auth_hook, add_auth_routes, show_logout_link
+from quasarr.providers.auth import (
+    add_auth_hook,
+    add_auth_routes,
+    audit_route_auth_modes,
+    show_logout_link,
+)
 from quasarr.providers.hostname_issues import get_all_hostname_issues
 from quasarr.providers.html_templates import (
     render_button,
     render_centered_html,
     render_success,
+)
+from quasarr.providers.notifications.helpers.notification_types import (
+    get_notification_type_label,
+    get_user_configurable_notification_types,
 )
 from quasarr.providers.web_server import Server
 from quasarr.search.sources.helpers import get_login_required_hostnames
@@ -31,12 +42,9 @@ def get_api(shared_state_dict, shared_state_lock):
 
     app = Bottle()
 
-    # Auth: routes must come first, then hook
+    # Install auth policy before the route modules are registered.
     add_auth_routes(app)
-    add_auth_hook(
-        app,
-        whitelist=["/api", "/api/", "/sponsors_helper/", "/download/", ".user.js"],
-    )
+    add_auth_hook(app, whitelist=[".user.js"])
 
     setup_arr_routes(app)
     setup_captcha_routes(app)
@@ -44,6 +52,11 @@ def get_api(shared_state_dict, shared_state_lock):
     setup_statistics(app, shared_state)
     setup_sponsors_helper_routes(app)
     setup_packages_routes(app)
+    audit_route_auth_modes(
+        app,
+        api_key_prefixes=("/api", "/download/", "/sponsors_helper/api/"),
+        public_whitelist=(".user.js",),
+    )
 
     @app.get("/")
     def index():
@@ -151,6 +164,67 @@ def get_api(shared_state_dict, shared_state_lock):
                 <span style="font-size: 0.9em;">⚠️ FlareSolverr setup was skipped. Some sites may not work.</span>
             </div>
             """
+
+        notification_cases = [
+            (
+                notification_type.value,
+                get_notification_type_label(notification_type),
+            )
+            for notification_type in get_user_configurable_notification_types()
+        ]
+
+        notification_settings = shared_state.values.get("notification_settings", {})
+        notification_toggles = notification_settings.get("toggles")
+        if not isinstance(notification_toggles, dict):
+            notification_toggles = {"discord": {}, "telegram": {}}
+        notification_silent = notification_settings.get("silent")
+        if not isinstance(notification_silent, dict):
+            notification_silent = {"discord": {}, "telegram": {}}
+
+        discord_webhook = notification_settings.get("discord_webhook") or ""
+        telegram_bot_token = notification_settings.get("telegram_bot_token") or ""
+        telegram_chat_id = notification_settings.get("telegram_chat_id") or ""
+
+        notification_cases_json = json.dumps(
+            [case_key for case_key, _ in notification_cases]
+        )
+
+        def render_notification_toggle_rows(provider):
+            provider_toggles = notification_toggles.get(provider, {})
+            provider_silent = notification_silent.get(provider, {})
+            cells = [
+                '<div class="notification-toggle-header">Notification</div>',
+                '<div class="notification-toggle-header toggle-cell">Enabled</div>',
+                '<div class="notification-toggle-header toggle-cell">Silent</div>',
+            ]
+            for case_key, case_label in notification_cases:
+                enabled_checked = (
+                    "checked" if provider_toggles.get(case_key, True) else ""
+                )
+                silent_checked = (
+                    "checked" if provider_silent.get(case_key, False) else ""
+                )
+                cells.append(
+                    f"""
+                    <div class="notification-toggle-label">{case_label}</div>
+                    <div class="notification-toggle-input toggle-cell">
+                        <label class="notification-toggle-control">
+                            <input type="checkbox" id="notif-{provider}-{case_key}" {enabled_checked}>
+                            <span class="notification-toggle-box" aria-hidden="true"></span>
+                        </label>
+                    </div>
+                    <div class="notification-toggle-input toggle-cell">
+                        <label class="notification-toggle-control">
+                            <input type="checkbox" id="notif-{provider}-{case_key}-silent" {silent_checked}>
+                            <span class="notification-toggle-box" aria-hidden="true"></span>
+                        </label>
+                    </div>
+                    """
+                )
+            return '<div class="notification-toggle-grid">' + "".join(cells) + "</div>"
+
+        discord_toggle_rows = render_notification_toggle_rows("discord")
+        telegram_toggle_rows = render_notification_toggle_rows("telegram")
 
         info = f"""
         <h1><img src="{images.logo}" type="image/webp" alt="Quasarr logo" class="logo"/>Quasarr</h1>
@@ -264,6 +338,56 @@ def get_api(shared_state_dict, shared_state_lock):
                             </div>
                         </div>
                     </form>
+                </div>
+            </details>
+        </div>
+
+        <div class="section">
+            <details id="notificationsDetails">
+                <summary id="notificationsSummary">🔔 Notifications Configuration</summary>
+                <div class="api-settings">
+                    <p class="api-hint">
+                        It is recommended to configure one provider below for an optimal user experience.
+                    </p>
+
+                    <div class="notification-provider-card">
+                        <h4><img src="{images.discord}" type="image/webp" alt="Discord logo" class="inline-icon"/> Discord</h4>
+                        <div class="input-group">
+                            <label for="notification-discord-webhook">Webhook URL</label>
+                            <div class="input-row">
+                                <input type="text" id="notification-discord-webhook" placeholder="https://discord.com/api/webhooks/..." value="{discord_webhook}">
+                            </div>
+                        </div>
+                        <div class="notification-toggle-list">
+                            {discord_toggle_rows}
+                        </div>
+                        <div id="notification-discord-status" class="notification-status"></div>
+                        <p>{render_button("Send Discord Test", "secondary", {"onclick": "sendNotificationTest('discord')", "type": "button"})}</p>
+                    </div>
+
+                    <div class="notification-provider-card">
+                        <h4><img src="{images.telegram}" type="image/webp" alt="Telegram logo" class="inline-icon"/> Telegram</h4>
+                        <div class="input-group">
+                            <label for="notification-telegram-token">Bot Token</label>
+                            <div class="input-row">
+                                <input type="text" id="notification-telegram-token" placeholder="123456789:..." value="{telegram_bot_token}">
+                            </div>
+                        </div>
+                        <div class="input-group">
+                            <label for="notification-telegram-chat-id">Chat ID</label>
+                            <div class="input-row">
+                                <input type="text" id="notification-telegram-chat-id" placeholder="987654321 or @channel" value="{telegram_chat_id}">
+                            </div>
+                        </div>
+                        <div class="notification-toggle-list">
+                            {telegram_toggle_rows}
+                        </div>
+                        <div id="notification-telegram-status" class="notification-status"></div>
+                        <p>{render_button("Send Telegram Test", "secondary", {"onclick": "sendNotificationTest('telegram')", "type": "button"})}</p>
+                    </div>
+
+                    <div id="notification-save-status" class="notification-status"></div>
+                    <p>{render_button("Save Notification Settings", "primary", {"onclick": "saveNotificationSettings()", "type": "button", "id": "notificationSaveBtn"})}</p>
                 </div>
             </details>
         </div>
@@ -390,6 +514,17 @@ def get_api(shared_state_dict, shared_state_lock):
                 min-width: 0;
                 margin: 0;
             }}
+            .input-row select {{
+                flex: 1;
+                padding: 8px 12px;
+                border: 1px solid var(--input-border, #ced4da);
+                border-radius: 4px;
+                font-size: 0.9em;
+                background: var(--input-bg, #e9ecef);
+                color: var(--fg-color, #212529);
+                min-width: 0;
+                margin: 0;
+            }}
             .input-row button {{
                 padding: 8px 16px;
                 border: none;
@@ -415,6 +550,133 @@ def get_api(shared_state_dict, shared_state_lock):
             }}
             #toggleKey:hover {{
                 background: var(--btn-secondary-hover, #545b62);
+            }}
+
+            .notification-provider-card {{
+                border: 1px solid var(--card-border, #dee2e6);
+                border-radius: 8px;
+                padding: 12px;
+                margin-bottom: 14px;
+                background: var(--card-bg, #f8f9fa);
+            }}
+            .notification-provider-card h4 {{
+                margin: 0 0 10px 0;
+                font-size: 1em;
+                display: flex;
+                align-items: center;
+                gap: 8px;
+            }}
+            .notification-toggle-list {{
+                margin-top: 6px;
+                margin-bottom: 10px;
+            }}
+            .notification-toggle-grid {{
+                display: grid;
+                grid-template-columns: minmax(0, 1fr) repeat(2, 96px);
+                align-items: center;
+                column-gap: 24px;
+                row-gap: 10px;
+                font-size: 0.9em;
+            }}
+            .notification-toggle-grid .notification-toggle-header {{
+                font-size: 0.85em;
+                font-weight: 600;
+                padding-bottom: 4px;
+                min-width: 0;
+            }}
+            .notification-toggle-grid .notification-toggle-label {{
+                text-align: left;
+                min-width: 0;
+            }}
+            .notification-toggle-grid .notification-toggle-header.toggle-cell,
+            .notification-toggle-grid .toggle-cell {{
+                text-align: center;
+                white-space: nowrap;
+                justify-self: center;
+                width: 96px;
+            }}
+            .notification-toggle-grid .notification-toggle-input {{
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                min-height: 24px;
+            }}
+            .notification-toggle-grid .notification-toggle-control {{
+                position: relative;
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                width: 18px;
+                height: 18px;
+                cursor: pointer;
+            }}
+            .notification-toggle-grid .notification-toggle-control input {{
+                position: absolute;
+                inset: 0;
+                width: 18px;
+                height: 18px;
+                margin: 0;
+                opacity: 0;
+                cursor: pointer;
+            }}
+            .notification-toggle-grid .notification-toggle-box {{
+                position: relative;
+                box-sizing: border-box;
+                display: block;
+                width: 18px;
+                height: 18px;
+                border: 2px solid var(--input-border, #7a7a7a);
+                border-radius: 4px;
+                background: var(--card-bg, #f8f9fa);
+                transition: background-color 0.15s ease, border-color 0.15s ease;
+            }}
+            .notification-toggle-grid .notification-toggle-control input:checked + .notification-toggle-box {{
+                background: var(--btn-primary-bg, #1a73e8);
+                border-color: var(--btn-primary-bg, #1a73e8);
+            }}
+            .notification-toggle-grid .notification-toggle-control input:checked + .notification-toggle-box::after {{
+                content: "";
+                position: absolute;
+                left: 5px;
+                top: 1px;
+                width: 4px;
+                height: 9px;
+                border: solid #fff;
+                border-width: 0 2px 2px 0;
+                transform: rotate(45deg);
+            }}
+            .notification-toggle-grid .notification-toggle-control input:focus-visible + .notification-toggle-box {{
+                outline: 2px solid var(--link-color, #0066cc);
+                outline-offset: 2px;
+            }}
+            @media (max-width: 500px) {{
+                .notification-toggle-grid {{
+                    grid-template-columns: minmax(0, 1fr) repeat(2, 72px);
+                    column-gap: 12px;
+                }}
+                .notification-toggle-grid .notification-toggle-header.toggle-cell,
+                .notification-toggle-grid .toggle-cell {{
+                    width: 72px;
+                }}
+            }}
+            @media (max-width: 380px) {{
+                .notification-toggle-grid {{
+                    grid-template-columns: minmax(0, 1fr) repeat(2, 64px);
+                    column-gap: 8px;
+                }}
+                .notification-toggle-grid .notification-toggle-header {{
+                    font-size: 0.8em;
+                }}
+                .notification-toggle-grid .notification-toggle-header.toggle-cell,
+                .notification-toggle-grid .toggle-cell {{
+                    width: 64px;
+                }}
+            }}
+            .notification-status {{
+                min-height: 1.2em;
+                font-size: 0.9em;
+                margin-bottom: 8px;
+                text-align: left;
             }}
 
             .help-link {{
@@ -571,7 +833,7 @@ def get_api(shared_state_dict, shared_state_lock):
                 statusDiv.innerHTML = 'Verifying...';
                 statusDiv.style.color = 'var(--text-muted, #666)';
                 
-                fetch('/api/jdownloader/verify', {{
+                quasarrApiFetch('/api/jdownloader/verify', {{
                     method: 'POST',
                     headers: {{ 'Content-Type': 'application/json' }},
                     body: JSON.stringify({{ user: user, pass: pass }})
@@ -616,7 +878,7 @@ def get_api(shared_state_dict, shared_state_lock):
                 statusDiv.innerHTML = 'Saving...';
                 statusDiv.style.color = 'var(--text-muted, #666)';
                 
-                fetch('/api/jdownloader/save', {{
+                quasarrApiFetch('/api/jdownloader/save', {{
                     method: 'POST',
                     headers: {{ 'Content-Type': 'application/json' }},
                     body: JSON.stringify({{ user: user, pass: pass, device: device }})
@@ -638,6 +900,124 @@ def get_api(shared_state_dict, shared_state_lock):
                     statusDiv.innerHTML = '❌ Error: ' + error.message;
                     statusDiv.style.color = 'var(--status-error-color, #c62828)';
                 }});
+            }}
+
+            var notificationCases = {notification_cases_json};
+
+            function setNotificationStatus(elementId, message, isSuccess) {{
+                var statusElement = document.getElementById(elementId);
+                if (!statusElement) {{
+                    return;
+                }}
+
+                statusElement.innerHTML = message || '';
+                if (!message) {{
+                    statusElement.style.color = '';
+                    return;
+                }}
+
+                statusElement.style.color = isSuccess
+                    ? 'var(--status-success-color, #2e7d32)'
+                    : 'var(--status-error-color, #c62828)';
+            }}
+
+            function collectNotificationPayload() {{
+                var payload = {{
+                    discord_webhook: document.getElementById('notification-discord-webhook').value.trim(),
+                    telegram_bot_token: document.getElementById('notification-telegram-token').value.trim(),
+                    telegram_chat_id: document.getElementById('notification-telegram-chat-id').value.trim(),
+                    toggles: {{}},
+                    silent: {{}}
+                }};
+
+                ['discord', 'telegram'].forEach(function(provider) {{
+                    payload.toggles[provider] = {{}};
+                    payload.silent[provider] = {{}};
+                    notificationCases.forEach(function(notificationCase) {{
+                        var input = document.getElementById('notif-' + provider + '-' + notificationCase);
+                        var silentInput = document.getElementById('notif-' + provider + '-' + notificationCase + '-silent');
+                        payload.toggles[provider][notificationCase] = !!(input && input.checked);
+                        payload.silent[provider][notificationCase] = !!(silentInput && silentInput.checked);
+                    }});
+                }});
+
+                return payload;
+            }}
+
+            async function persistNotificationSettings(showSuccessMessage) {{
+                var saveButton = document.getElementById('notificationSaveBtn');
+                setNotificationStatus('notification-save-status', 'Saving notification settings...', true);
+
+                if (saveButton) {{
+                    saveButton.disabled = true;
+                    saveButton.textContent = 'Saving...';
+                }}
+
+                try {{
+                    var response = await quasarrApiFetch('/api/notifications/settings', {{
+                        method: 'POST',
+                        headers: {{ 'Content-Type': 'application/json' }},
+                        body: JSON.stringify(collectNotificationPayload())
+                    }});
+                    var data = await response.json();
+
+                    if (!response.ok || !data.success) {{
+                        throw new Error(data.message || 'Failed to save notification settings');
+                    }}
+
+                    if (showSuccessMessage) {{
+                        setNotificationStatus('notification-save-status', '✅ ' + data.message, true);
+                    }} else {{
+                        setNotificationStatus('notification-save-status', '', true);
+                    }}
+
+                    return {{ success: true, data: data }};
+                }} catch (error) {{
+                    setNotificationStatus('notification-save-status', '❌ ' + error.message, false);
+                    return {{ success: false, error: error.message }};
+                }} finally {{
+                    if (saveButton) {{
+                        saveButton.disabled = false;
+                        saveButton.textContent = 'Save Notification Settings';
+                    }}
+                }}
+            }}
+
+            async function saveNotificationSettings() {{
+                await persistNotificationSettings(true);
+            }}
+
+            async function sendNotificationTest(provider) {{
+                var statusId = provider === 'discord'
+                    ? 'notification-discord-status'
+                    : 'notification-telegram-status';
+
+                setNotificationStatus(statusId, 'Saving settings before test...', true);
+
+                var saveResult = await persistNotificationSettings(false);
+                if (!saveResult.success) {{
+                    setNotificationStatus(statusId, '❌ Save failed. Fix settings and retry.', false);
+                    return;
+                }}
+
+                setNotificationStatus(statusId, 'Sending test message...', true);
+
+                try {{
+                    var response = await quasarrApiFetch('/api/notifications/test', {{
+                        method: 'POST',
+                        headers: {{ 'Content-Type': 'application/json' }},
+                        body: JSON.stringify({{ provider: provider }})
+                    }});
+                    var data = await response.json();
+
+                    if (!response.ok || !data.success) {{
+                        throw new Error(data.message || 'Failed to send test message');
+                    }}
+
+                    setNotificationStatus(statusId, '✅ ' + data.message, true);
+                }} catch (error) {{
+                    setNotificationStatus(statusId, '❌ ' + error.message, false);
+                }}
             }}
         </script>
         """

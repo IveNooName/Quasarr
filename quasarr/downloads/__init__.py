@@ -11,11 +11,13 @@ from quasarr.constants import (
     PROTECTED_PATTERNS,
 )
 from quasarr.downloads.linkcrypters.hide import decrypt_links_if_hide
+from quasarr.downloads.mirror_filters import filter_final_download_urls
 from quasarr.downloads.packages import get_packages
 from quasarr.downloads.sources import get_sources as get_download_sources
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
 from quasarr.providers.log import info, warn
-from quasarr.providers.notifications import send_discord_message
+from quasarr.providers.notifications import send_notification
+from quasarr.providers.notifications.helpers.notification_types import NotificationType
 from quasarr.providers.statistics import StatsHelper
 from quasarr.providers.utils import (
     download_package,
@@ -25,6 +27,7 @@ from quasarr.providers.utils import (
 )
 from quasarr.storage.categories import (
     download_category_exists,
+    get_download_category_from_package_id,
     get_download_category_mirrors,
 )
 
@@ -123,18 +126,83 @@ def classify_links(links):
 # =============================================================================
 
 
+def _persist_failed_package(
+    shared_state, title, package_id, reason, remove_protected=False
+):
+    if remove_protected:
+        try:
+            shared_state.get_db("protected").delete(package_id)
+        except Exception as e:
+            info(f'Error removing protected package "{package_id}" before fail: {e}')
+    fail(title, package_id, shared_state, reason=reason)
+    return {"success": False, "persisted_failure": True, "reason": reason}
+
+
+def _delete_protected_package(shared_state, package_id):
+    try:
+        shared_state.get_db("protected").delete(package_id)
+    except Exception as e:
+        info(f'Error removing protected package "{package_id}": {e}')
+
+
+def _format_mirror_token_list(tokens):
+    cleaned = [str(token) for token in sorted(tokens) if token]
+    return ", ".join(cleaned) if cleaned else "unknown"
+
+
+def submit_final_download_urls(
+    shared_state, urls, title, password, package_id, remove_protected=False
+):
+    """
+    Final mirror whitelist check before sending direct HTTP links to JDownloader.
+    """
+    category = get_download_category_from_package_id(package_id)
+    mirrors = get_download_category_mirrors(category, lowercase=True)
+    filtered = filter_final_download_urls(urls, mirrors)
+    final_urls = filtered["urls"]
+    dropped = filtered["dropped"]
+
+    if mirrors and dropped:
+        info(
+            f"Final mirror-whitelist check kept <g>{len(final_urls)}</g> of <y>{len(urls)}</y> links "
+            f'for "{title}" in category "{category}" '
+            f"(allowed: {_format_mirror_token_list(filtered['allowed_tokens'])}, "
+            f"dropped: {_format_mirror_token_list({item['token'] for item in dropped})})"
+        )
+
+    if mirrors and not final_urls:
+        reason = (
+            f'All final download links were rejected by the mirror-whitelist for category "{category}". '
+            f"Allowed mirrors: {_format_mirror_token_list(filtered['allowed_tokens'])}. "
+            f"Received mirrors: {_format_mirror_token_list({item['token'] for item in dropped})}."
+        )
+        return _persist_failed_package(
+            shared_state,
+            title,
+            package_id,
+            reason,
+            remove_protected=remove_protected,
+        )
+
+    info(f"Sending {len(final_urls)} direct download links for {title}")
+    if download_package(final_urls, title, password, package_id, shared_state):
+        if remove_protected:
+            _delete_protected_package(shared_state, package_id)
+        return {"success": True, "links": final_urls}
+    return {
+        "success": False,
+        "reason": f"Failed to add {len(final_urls)} links to linkgrabber",
+    }
+
+
 def handle_direct_links(shared_state, links, title, password, package_id):
     """Send direct hoster links to JDownloader."""
     urls = [link[0] for link in links]
-    info(f"Sending {len(urls)} direct download links for {title}")
-
-    if download_package(urls, title, password, package_id, shared_state):
-        StatsHelper(shared_state).increment_package_with_links(urls)
+    result = submit_final_download_urls(shared_state, urls, title, password, package_id)
+    if result["success"]:
+        StatsHelper(shared_state).increment_package_with_links(result["links"])
         return {"success": True}
-    return {
-        "success": False,
-        "reason": f"Failed to add {len(urls)} links to linkgrabber",
-    }
+    return result
 
 
 def handle_auto_decrypt_links(shared_state, links, title, password, package_id):
@@ -150,10 +218,13 @@ def handle_auto_decrypt_links(shared_state, links, title, password, package_id):
 
     info(f"Decrypted <g>{len(decrypted_urls)}</g> download links for {title}")
 
-    if download_package(decrypted_urls, title, password, package_id, shared_state):
-        StatsHelper(shared_state).increment_package_with_links(decrypted_urls)
+    submit_result = submit_final_download_urls(
+        shared_state, decrypted_urls, title, password, package_id
+    )
+    if submit_result["success"]:
+        StatsHelper(shared_state).increment_package_with_links(submit_result["links"])
         return {"success": True}
-    return {"success": False, "reason": "Failed to add decrypted links to linkgrabber"}
+    return submit_result
 
 
 def store_protected_links(
@@ -242,18 +313,20 @@ def process_links(
         info(
             f"Found <g>{len(classified['direct'])}</g> direct hoster links for {title}"
         )
-        send_discord_message(
-            shared_state,
-            title=title,
-            case="unprotected",
-            imdb_id=imdb_id,
-            source=source_url,
-        )
         result = handle_direct_links(
             shared_state, classified["direct"], title, password, package_id
         )
         if result["success"]:
+            send_notification(
+                shared_state,
+                title=title,
+                case=NotificationType.UNPROTECTED,
+                imdb_id=imdb_id,
+                source=source_url,
+            )
             return {"success": True, "title": title}
+        if result.get("persisted_failure"):
+            return {"success": True, "title": title, "failed": True}
         return fail(title, package_id, shared_state, reason=result.get("reason"))
 
     # PRIORITY 2: Auto-decryptable (hide.cx)
@@ -265,24 +338,26 @@ def process_links(
             shared_state, classified["auto"], title, password, package_id
         )
         if result["success"]:
-            send_discord_message(
+            send_notification(
                 shared_state,
                 title=title,
-                case="unprotected",
+                case=NotificationType.UNPROTECTED,
                 imdb_id=imdb_id,
                 source=source_url,
             )
             return {"success": True, "title": title}
+        if result.get("persisted_failure"):
+            return {"success": True, "title": title, "failed": True}
         info(f"Auto-decrypt failed for {title}, falling back to manual CAPTCHA...")
         classified["protected"].extend(classified["auto"])
 
     # PRIORITY 3: Protected (filecrypt, tolink, keeplinks, junkies)
     if classified["protected"]:
         info(f"Found <g>{len(classified['protected'])}</g> protected links for {title}")
-        send_discord_message(
+        send_notification(
             shared_state,
             title=title,
-            case="captcha",
+            case=NotificationType.CAPTCHA,
             imdb_id=imdb_id,
             source=source_url,
         )

@@ -5,6 +5,7 @@
 import base64
 import configparser
 import re
+import shutil
 import string
 
 from Cryptodome.Cipher import AES
@@ -12,6 +13,7 @@ from Cryptodome.Random import get_random_bytes
 from Cryptodome.Util.Padding import pad
 
 from quasarr.providers import shared_state
+from quasarr.providers.log import info, warn
 from quasarr.search.sources.helpers import get_hostnames
 from quasarr.storage.sqlite_database import DataBase
 
@@ -32,6 +34,11 @@ class Config(object):
         "Hostnames": [(hostname, "secret", "") for hostname in get_hostnames()],
         "FlareSolverr": [
             ("url", "str", ""),
+        ],
+        "Notifications": [
+            ("discord_webhook", "secret", ""),
+            ("telegram_bot_token", "secret", ""),
+            ("telegram_chat_id", "secret", ""),
         ],
         "AL": [("user", "secret", ""), ("password", "secret", "")],
         "DD": [("user", "secret", ""), ("password", "secret", "")],
@@ -64,6 +71,80 @@ class Config(object):
             self._config.set(section, key, value)
         with open(self._configfile, "w") as configfile:
             self._config.write(configfile)
+
+    @classmethod
+    def _get_supported_keys(cls, section):
+        return {
+            key.lower()
+            for key, _key_type, _value in cls._DEFAULT_CONFIG.get(section, [])
+        }
+
+    @classmethod
+    def _build_unsupported_key_plan(cls, config):
+        prune_plan = {}
+        for section in config.sections():
+            supported_keys = cls._get_supported_keys(section)
+            if not supported_keys:
+                continue
+
+            unsupported_keys = sorted(
+                key
+                for key in config.options(section)
+                if key.lower() not in supported_keys
+            )
+            if unsupported_keys:
+                prune_plan[section] = unsupported_keys
+
+        return prune_plan
+
+    @classmethod
+    def prune_unsupported_keys(cls, configfile):
+        config = configparser.RawConfigParser()
+        config.read(configfile)
+
+        prune_plan = cls._build_unsupported_key_plan(config)
+        if not prune_plan:
+            return {}
+
+        backupfile = f"{configfile}.bak"
+        try:
+            shutil.copy2(configfile, backupfile)
+        except Exception as e:
+            warn(
+                f'Unsupported INI key cleanup skipped: could not create backup "{backupfile}": {e}'
+            )
+            return {}
+
+        for section, keys in prune_plan.items():
+            for key in keys:
+                config.remove_option(section, key)
+
+        try:
+            with open(configfile, "w") as config_handle:
+                config.write(config_handle)
+
+            verify_config = configparser.RawConfigParser()
+            verify_config.read(configfile)
+            for section, keys in prune_plan.items():
+                if not verify_config.has_section(section):
+                    raise ValueError(f'Missing section "{section}" after cleanup')
+                if any(verify_config.has_option(section, key) for key in keys):
+                    raise ValueError(
+                        f'Unsupported keys remain in "{section}" after cleanup'
+                    )
+        except Exception as e:
+            shutil.copy2(backupfile, configfile)
+            warn(
+                f"Unsupported INI key cleanup failed verification and was reverted: {e}"
+            )
+            return {}
+
+        removed_count = sum(len(keys) for keys in prune_plan.values())
+        info(
+            f"Pruned {removed_count} unsupported INI key{'s' if removed_count != 1 else ''}. "
+            f'Backup saved to "{backupfile}".'
+        )
+        return prune_plan
 
     def _get_encryption_params(self):
         crypt_key = DataBase("secrets").retrieve("key")
@@ -99,6 +180,10 @@ class Config(object):
             (key, "", self._config.get(section, key))
             for key in self._config.options(section)
         ]
+
+    def _write_config(self):
+        with open(self._configfile, "w") as configfile:
+            self._config.write(configfile)
 
     def _get_from_config(self, scope, key):
         res = [param[2] for param in scope if param[0] == key]
@@ -143,6 +228,13 @@ class Config(object):
 
     def get(self, key):
         return self._get_from_config(self.__config__, key)
+
+    def delete(self, key):
+        if self._config.has_option(self._section, key):
+            self._config.remove_option(self._section, key)
+            self._write_config()
+            self.__config__ = self._read_config(self._section)
+        return
 
 
 def get_clean_hostnames(shared_state):

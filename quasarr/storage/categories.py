@@ -192,7 +192,7 @@ def get_search_category_sources(cat_id):
     owner_cat_id = get_search_category_whitelist_owner(cat_id)
     lookup_ids = [owner_cat_id]
     if owner_cat_id != cat_id:
-        # Keep legacy compatibility for old subcategory-specific rows.
+        # Fall back to a category-specific row when ownership differs.
         lookup_ids.append(cat_id)
 
     db = DataBase("categories_search")

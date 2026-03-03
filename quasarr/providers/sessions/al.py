@@ -169,9 +169,8 @@ def retrieve_and_validate_session(shared_state):
         else:
             trace(f"Session valid (age: {age / 3600:.1f} hours)")
     except (json.JSONDecodeError, TypeError):
-        # Legacy format: plain base64 token without timestamp
-        # Treat as expired and recreate
-        debug("Legacy session format detected, recreating")
+        # Stored session is not in the current JSON envelope. Recreate it.
+        debug("Stored session format is invalid, recreating")
         invalidate_session(shared_state)
         return create_and_persist_session(shared_state)
 

@@ -15,6 +15,7 @@ from quasarr.constants import (
     RECOMMENDED_HOSTERS,
     SHARE_HOSTERS,
 )
+from quasarr.providers.auth import require_api_key
 from quasarr.providers.html_templates import render_button, render_form
 from quasarr.providers.log import info
 from quasarr.providers.utils import (
@@ -42,18 +43,22 @@ from quasarr.storage.setup import (
     clear_skip_login,
     delete_skip_flaresolverr_preference,
     get_flaresolverr_status_data,
+    get_notification_settings_data,
     get_skip_login,
     hostname_form_html,
     import_hostnames_from_url,
     save_flaresolverr_url,
     save_hostnames,
     save_jdownloader_settings,
+    save_notification_settings,
+    send_notification_test,
     verify_jdownloader_credentials,
 )
 
 
 def setup_config(app, shared_state):
     @app.get("/api/hostname-issues")
+    @require_api_key
     def get_hostname_issues_api():
         response.content_type = "application/json"
         from quasarr.providers.hostname_issues import get_all_hostname_issues
@@ -79,41 +84,50 @@ def setup_config(app, shared_state):
         )
 
     @app.post("/api/hostnames")
+    @require_api_key
     def hostnames_api():
         return save_hostnames(shared_state, timeout=1, first_run=False)
 
     @app.post("/api/hostnames/check-credentials/<shorthand>")
+    @require_api_key
     def check_credentials_api(shorthand):
         return check_credentials(shared_state, shorthand)
 
     @app.post("/api/hostnames/import-url")
+    @require_api_key
     def import_hostnames_route():
         return import_hostnames_from_url()
 
     @app.get("/api/skip-login")
+    @require_api_key
     def get_skip_login_route():
         return get_skip_login()
 
     @app.delete("/api/skip-login/<shorthand>")
+    @require_api_key
     def clear_skip_login_route(shorthand):
         return clear_skip_login(shorthand)
 
     @app.post("/api/flaresolverr")
+    @require_api_key
     def set_flaresolverr_url():
         """Save FlareSolverr URL from web UI."""
         return save_flaresolverr_url(shared_state)
 
     @app.get("/api/flaresolverr/status")
+    @require_api_key
     def get_flaresolverr_status():
         """Return FlareSolverr configuration status."""
         return get_flaresolverr_status_data(shared_state)
 
     @app.delete("/api/skip-flaresolverr")
+    @require_api_key
     def clear_skip_flaresolverr():
         """Clear skip FlareSolverr preference."""
         return delete_skip_flaresolverr_preference()
 
     @app.post("/api/restart")
+    @require_api_key
     def restart_quasarr():
         """Restart Quasarr. In Docker with the restart loop, exit(0) triggers restart."""
         response.content_type = "application/json"
@@ -128,12 +142,29 @@ def setup_config(app, shared_state):
         return {"success": True, "message": "Restarting..."}
 
     @app.post("/api/jdownloader/verify")
+    @require_api_key
     def verify_jdownloader_api():
         return verify_jdownloader_credentials(shared_state)
 
     @app.post("/api/jdownloader/save")
+    @require_api_key
     def save_jdownloader_api():
         return save_jdownloader_settings(shared_state, is_setup=False)
+
+    @app.get("/api/notifications/settings")
+    @require_api_key
+    def get_notification_settings_api():
+        return get_notification_settings_data(shared_state)
+
+    @app.post("/api/notifications/settings")
+    @require_api_key
+    def save_notification_settings_api():
+        return save_notification_settings(shared_state)
+
+    @app.post("/api/notifications/test")
+    @require_api_key
+    def send_notification_test_api():
+        return send_notification_test(shared_state)
 
     @app.get("/categories")
     def categories_ui():
@@ -562,7 +593,7 @@ def setup_config(app, shared_state):
             
             if (!name) return;
             
-            fetch('/api/categories', {{
+            quasarrApiFetch('/api/categories', {{
                 method: 'POST',
                 headers: {{ 'Content-Type': 'application/json' }},
                 body: JSON.stringify({{ name: name }})
@@ -586,7 +617,7 @@ def setup_config(app, shared_state):
             
             if (!baseType) return;
             
-            fetch('/api/categories_search', {{
+            quasarrApiFetch('/api/categories_search', {{
                 method: 'POST',
                 headers: {{ 'Content-Type': 'application/json' }},
                 body: JSON.stringify({{ base_type: baseType }})
@@ -678,7 +709,7 @@ def setup_config(app, shared_state):
             
             closeModal();
             
-            fetch('/api/categories/' + name + '/mirrors', {{
+            quasarrApiFetch('/api/categories/' + name + '/mirrors', {{
                 method: 'POST',
                 headers: {{ 'Content-Type': 'application/json' }},
                 body: JSON.stringify({{ mirrors: selectedMirrors }})
@@ -704,7 +735,7 @@ def setup_config(app, shared_state):
             
             closeModal();
             
-            fetch('/api/categories_search/' + catId + '/search_sources', {{
+            quasarrApiFetch('/api/categories_search/' + catId + '/search_sources', {{
                 method: 'POST',
                 headers: {{ 'Content-Type': 'application/json' }},
                 body: JSON.stringify({{ search_sources: selectedSearchSources }})
@@ -738,7 +769,7 @@ def setup_config(app, shared_state):
 
         function performDeleteCategory(name) {{
             closeModal();
-            fetch('/api/categories/' + name, {{
+            quasarrApiFetch('/api/categories/' + name, {{
                 method: 'DELETE'
             }})
             .then(response => response.json())
@@ -756,7 +787,7 @@ def setup_config(app, shared_state):
         
         function performDeleteSearchCategory(catId) {{
             closeModal();
-            fetch('/api/categories_search/' + catId, {{
+            quasarrApiFetch('/api/categories_search/' + catId, {{
                 method: 'DELETE'
             }})
             .then(response => response.json())
@@ -776,6 +807,7 @@ def setup_config(app, shared_state):
         return render_form("Categories", form_html)
 
     @app.post("/api/categories")
+    @require_api_key
     def add_category_api():
         response.content_type = "application/json"
         try:
@@ -787,6 +819,7 @@ def setup_config(app, shared_state):
             return {"success": False, "message": str(e)}
 
     @app.post("/api/categories_search")
+    @require_api_key
     def add_search_category_api():
         response.content_type = "application/json"
         try:
@@ -798,6 +831,7 @@ def setup_config(app, shared_state):
             return {"success": False, "message": str(e)}
 
     @app.post("/api/categories/<name>/mirrors")
+    @require_api_key
     def update_category_mirrors_api(name):
         response.content_type = "application/json"
         try:
@@ -809,6 +843,7 @@ def setup_config(app, shared_state):
             return {"success": False, "message": str(e)}
 
     @app.post("/api/categories_search/<cat_id>/search_sources")
+    @require_api_key
     def update_search_category_sources_api(cat_id):
         response.content_type = "application/json"
         try:
@@ -820,6 +855,7 @@ def setup_config(app, shared_state):
             return {"success": False, "message": str(e)}
 
     @app.delete("/api/categories/<name>")
+    @require_api_key
     def delete_category_api(name):
         response.content_type = "application/json"
         try:
@@ -829,6 +865,7 @@ def setup_config(app, shared_state):
             return {"success": False, "message": str(e)}
 
     @app.delete("/api/categories_search/<cat_id>")
+    @require_api_key
     def delete_search_category_api(cat_id):
         response.content_type = "application/json"
         try:

@@ -6,11 +6,20 @@ import time
 
 import quasarr.providers.html_images as images
 from quasarr.providers import shared_state
+from quasarr.providers.auth import is_auth_enabled, is_browser_authenticated
 from quasarr.providers.log import warn
 from quasarr.providers.version import get_version
+from quasarr.storage.config import Config
 
 
 def render_centered_html(inner_content, footer_content=""):
+    api_key = ""
+    if not is_auth_enabled() or is_browser_authenticated():
+        try:
+            api_key = Config("API").get("key") or ""
+        except Exception:
+            api_key = ""
+
     head = (
         '''
     <head>
@@ -365,6 +374,10 @@ def render_centered_html(inner_content, footer_content=""):
             }
         </style>
         <script>
+            window.QUASARR_API_KEY = """
+        + repr(api_key)
+        + """;
+
             document.addEventListener('DOMContentLoaded', function() {
                 const h1 = document.querySelector('h1');
                 if (h1) {
@@ -372,7 +385,33 @@ def render_centered_html(inner_content, footer_content=""):
                         window.location.href = '/';
                     };
                 }
+
+                if (window.QUASARR_API_KEY) {
+                    document.querySelectorAll('form[action^="/api"]').forEach(function(form) {
+                        if (form.querySelector('input[name="apikey"]')) {
+                            return;
+                        }
+
+                        const input = document.createElement('input');
+                        input.type = 'hidden';
+                        input.name = 'apikey';
+                        input.value = window.QUASARR_API_KEY;
+                        form.appendChild(input);
+                    });
+                }
             });
+
+            function quasarrApiFetch(path, options) {
+                const requestOptions = options ? { ...options } : {};
+                const headers = new Headers(requestOptions.headers || {});
+
+                if (window.QUASARR_API_KEY && !headers.has('X-API-Key')) {
+                    headers.set('X-API-Key', window.QUASARR_API_KEY);
+                }
+
+                requestOptions.headers = headers;
+                return fetch(path, requestOptions);
+            }
         </script>
     </head>"""
     )

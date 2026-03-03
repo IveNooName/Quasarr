@@ -4,7 +4,6 @@
 
 import multiprocessing
 import os
-import re
 import sys
 import tempfile
 import time
@@ -23,7 +22,8 @@ from quasarr.providers.log import (
     info,
     log_level_names,
 )
-from quasarr.providers.notifications import send_discord_message
+from quasarr.providers.notifications import send_notification
+from quasarr.providers.notifications.helpers.notification_types import NotificationType
 from quasarr.providers.utils import (
     Unbuffered,
     check_flaresolverr,
@@ -37,6 +37,7 @@ from quasarr.storage.setup import (
     flaresolverr_config,
     hostname_credentials_config,
     hostnames_config,
+    initialize_notification_settings,
     jdownloader_config,
     path_config,
 )
@@ -67,7 +68,6 @@ def run():
         port = int(os.environ.get("PORT", "8080"))
         internal_address_env = os.environ.get("INTERNAL_ADDRESS")
         external_address_env = os.environ.get("EXTERNAL_ADDRESS")
-        discord_env = os.environ.get("DISCORD")
 
         config_path = ""
         if os.environ.get("DOCKER"):
@@ -113,6 +113,7 @@ def run():
             sys.exit(1)
 
         shared_state.set_files(config_path)
+        Config.prune_unsupported_keys(shared_state.values["configfile"])
         shared_state.update("config", Config)
         shared_state.update("database", DataBase)
         supported_hostnames = extract_allowed_keys(Config._DEFAULT_CONFIG, "Hostnames")
@@ -168,15 +169,7 @@ def run():
         if not user or not password or not device:
             jdownloader_config(shared_state)
 
-        discord_url = ""
-        if discord_env:
-            discord_webhook_pattern = r"^https://discord\.com/api/webhooks/\d+/[\w-]+$"
-            if re.match(discord_webhook_pattern, discord_env):
-                shared_state.update("webhook", discord_env)
-                discord_url = discord_env
-            else:
-                error(f"Invalid Discord Webhook URL provided: {discord_env}")
-        shared_state.update("discord", discord_url)
+        initialize_notification_settings(shared_state)
 
         api_key = Config("API").get("key")
         if not api_key:
@@ -320,8 +313,11 @@ def update_checker(shared_state_dict, shared_state_lock):
                 info(f"Please update to {update_available} as soon as possible!")
                 info(f'Release notes at: "{link}"')
                 update_available = {"version": update_available, "link": link}
-                send_discord_message(
-                    shared_state, message, "quasarr_update", details=update_available
+                send_notification(
+                    shared_state,
+                    message,
+                    NotificationType.QUASARR_UPDATE,
+                    details=update_available,
                 )
 
             # wait one hour before next check

@@ -13,7 +13,7 @@ from base64 import urlsafe_b64decode, urlsafe_b64encode
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime, timedelta
 from io import BytesIO
-from urllib.parse import urlparse
+from urllib.parse import urlencode, urlparse
 
 import requests
 from PIL import Image
@@ -42,6 +42,7 @@ from quasarr.constants import (
 from quasarr.providers.log import crit, debug, error, trace, warn
 from quasarr.search.sources.helpers import get_login_required_hostnames
 from quasarr.storage.categories import download_category_exists, search_category_exists
+from quasarr.storage.config import Config
 from quasarr.storage.sqlite_database import DataBase
 
 
@@ -259,9 +260,13 @@ def generate_download_link(
     raw_payload = f"{title}|{url}|{size_mb}|{password}|{imdb_id}|{source_key}"
     encoded_payload = urlsafe_b64encode(raw_payload.encode("utf-8")).decode("utf-8")
 
-    return (
-        f"{shared_state.values['internal_address']}/download/?payload={encoded_payload}"
+    query = urlencode(
+        {
+            "payload": encoded_payload,
+            "apikey": Config("API").get("key") or "",
+        }
     )
+    return f"{shared_state.values['internal_address']}/download/?{query}"
 
 
 # =============================================================================
@@ -499,7 +504,7 @@ def determine_category(request_from, category=None):
 def get_base_search_category_id(cat_id):
     """
     Resolves a category ID (default, subcategory, or custom) to its base type ID.
-    Supports legacy custom category IDs by falling back to stored base_type metadata.
+    Falls back to stored base_type metadata when ID math alone is ambiguous.
     """
     try:
         cat_id = int(cat_id)
@@ -531,7 +536,7 @@ def get_base_search_category_id(cat_id):
     elif 7000 <= cat_id < 8000:
         return SEARCH_CAT_BOOKS
 
-    # Legacy fallback: custom category IDs may not always be reversible from ID math.
+    # Fallback: custom category IDs may not always be reversible from ID math.
     db = DataBase("categories_search")
     data_str = db.retrieve(str(cat_id))
     if not data_str:
@@ -543,7 +548,7 @@ def get_base_search_category_id(cat_id):
         return None
 
     base_type = data.get("base_type")
-    legacy_base_type_map = {
+    base_type_name_map = {
         "movies": SEARCH_CAT_MOVIES,
         "music": SEARCH_CAT_MUSIC,
         "tv": SEARCH_CAT_SHOWS,
@@ -551,8 +556,8 @@ def get_base_search_category_id(cat_id):
     }
 
     if isinstance(base_type, str):
-        if base_type in legacy_base_type_map:
-            return legacy_base_type_map[base_type]
+        if base_type in base_type_name_map:
+            return base_type_name_map[base_type]
         try:
             base_type = int(base_type)
         except ValueError:
@@ -597,10 +602,10 @@ def get_search_behavior_category(cat_id):
         except json.JSONDecodeError:
             pass
 
-    # Legacy fallback for IDs created as 100000 + category_id.
-    legacy_base = cat_id - 100000
-    if legacy_base in SEARCH_CATEGORIES:
-        return legacy_base
+    # Fallback for custom IDs derived directly from category IDs.
+    direct_base_candidate = cat_id - 100000
+    if direct_base_candidate in SEARCH_CATEGORIES:
+        return direct_base_candidate
 
     # Final fallback to canonical base type.
     return get_base_search_category_id(cat_id)
@@ -710,7 +715,7 @@ def has_source_capability_for_category(cat_id, supported_categories):
     except (TypeError, ValueError):
         return False
 
-    # Keep legacy behavior: always expose custom categories.
+    # Always expose custom categories.
     if cat_id >= 100000:
         return True
 

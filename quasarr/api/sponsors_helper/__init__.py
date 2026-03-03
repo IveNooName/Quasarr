@@ -8,13 +8,13 @@ from functools import wraps
 
 from bottle import abort, request
 
-from quasarr.downloads import fail
+from quasarr.downloads import fail, submit_final_download_urls
 from quasarr.providers import shared_state
 from quasarr.providers.auth import require_api_key
 from quasarr.providers.log import info, warn
-from quasarr.providers.notifications import send_discord_message
+from quasarr.providers.notifications import send_notification
+from quasarr.providers.notifications.helpers.notification_types import NotificationType
 from quasarr.providers.statistics import StatsHelper
-from quasarr.providers.utils import download_package
 from quasarr.storage.categories import (
     get_download_category_from_package_id,
     get_download_category_mirrors,
@@ -41,6 +41,35 @@ def require_helper_active(func):
 
 
 def setup_sponsors_helper_routes(app):
+    def extract_failure_reason(data, default_reason=None):
+        if not isinstance(data, dict):
+            return default_reason
+
+        reason = data.get("reason") or data.get("error")
+        if reason:
+            return str(reason)
+        return default_reason
+
+    def mark_helper_package_failed(package_id, title, reason):
+        fail(title, package_id, shared_state, reason=reason)
+        try:
+            shared_state.get_db("protected").delete(package_id)
+        except Exception as e:
+            info(
+                f'Error deleting protected package "{package_id}" after helper failure: {e}'
+            )
+        send_notification(
+            shared_state,
+            title=title,
+            case=NotificationType.FAILED,
+            details={"reason": reason},
+        )
+        return {
+            "success": False,
+            "failed": True,
+            "reason": reason,
+        }
+
     @app.get("/sponsors_helper/api/ping/")
     @require_api_key
     def ping_api():
@@ -121,7 +150,9 @@ def setup_sponsors_helper_routes(app):
     @require_helper_active
     def download_api():
         try:
-            data = request.json
+            data = request.json or {}
+            if not isinstance(data, dict):
+                return abort(400, "Missing or invalid JSON object")
             title = data.get("name")
             package_id = data.get("package_id")
             download_links = data.get("urls")
@@ -132,48 +163,83 @@ def setup_sponsors_helper_routes(app):
                 return abort(400, "Missing or invalid 'notification' object")
             if not isinstance(notification.get("solvers"), list):
                 return abort(400, "Missing or invalid 'notification.solvers' list")
+            if not package_id:
+                return abort(400, "Missing or invalid 'package_id'")
+            if not title:
+                title = "Unknown"
+            if not isinstance(download_links, list):
+                StatsHelper(shared_state).increment_failed_decryptions_automatic()
+                return mark_helper_package_failed(
+                    package_id,
+                    title,
+                    "SponsorsHelper returned an invalid download payload.",
+                )
 
             info(
                 f"Received <green>{len(download_links)}</green> download links for <y>{title}</y>"
             )
 
             if download_links:
-                downloaded = download_package(
-                    download_links, title, password, package_id, shared_state
+                submit_result = submit_final_download_urls(
+                    shared_state,
+                    download_links,
+                    title,
+                    password,
+                    package_id,
+                    remove_protected=True,
                 )
-                if downloaded:
-                    StatsHelper(shared_state).increment_package_with_links(
-                        download_links
-                    )
+                if submit_result["success"]:
+                    final_links = submit_result["links"]
+                    StatsHelper(shared_state).increment_package_with_links(final_links)
                     StatsHelper(shared_state).increment_captcha_decryptions_automatic()
-                    shared_state.get_db("protected").delete(package_id)
 
-                    send_discord_message(
-                        shared_state, title=title, case="solved", details=notification
+                    send_notification(
+                        shared_state,
+                        title=title,
+                        case=NotificationType.SOLVED,
+                        details=notification,
                     )
                     log_msg = f"Download successfully started for <y>{title}</y>"
                     providers = notification.get("solvers")
+                    used_providers = []
                     if isinstance(providers, list) and providers:
-                        used_providers = []
                         for provider in providers:
                             if not isinstance(provider, dict):
                                 continue
                             provider_name = provider.get("name")
                             if provider_name:
                                 used_providers.append(str(provider_name))
-                        if used_providers:
-                            unique_providers = sorted(set(used_providers))
-                            log_msg += f" | Providers: {', '.join(unique_providers)}"
+                    if used_providers:
+                        unique_providers = sorted(set(used_providers))
+                        log_msg += f" | Providers: {', '.join(unique_providers)}"
                     if notification.get("duration_seconds") is not None:
                         log_msg += (
                             f" | Duration: {notification.get('duration_seconds')}s"
                         )
                     info(log_msg)
-                    return (
-                        f"Downloaded {len(download_links)} download links for {title}"
+                    return f"Downloaded {len(final_links)} download links for {title}"
+                elif submit_result.get("persisted_failure"):
+                    StatsHelper(shared_state).increment_failed_decryptions_automatic()
+                    send_notification(
+                        shared_state,
+                        title=title,
+                        case=NotificationType.FAILED,
+                        details={"reason": submit_result["reason"]},
                     )
+                    return {
+                        "success": False,
+                        "failed": True,
+                        "reason": submit_result["reason"],
+                    }
                 else:
                     info(f"Download failed for <y>{title}</y>")
+            else:
+                StatsHelper(shared_state).increment_failed_decryptions_automatic()
+                return mark_helper_package_failed(
+                    package_id,
+                    title,
+                    "SponsorsHelper returned no final download links.",
+                )
 
         except Exception as e:
             info(f"Error decrypting: {e}")
@@ -186,8 +252,11 @@ def setup_sponsors_helper_routes(app):
     @require_helper_active
     def disable_api():
         try:
-            data = request.json
+            data = request.json or {}
+            if not isinstance(data, dict):
+                return {"error": "Missing or invalid JSON object"}, 400
             package_id = data.get("package_id")
+            reason = extract_failure_reason(data)
 
             if not package_id:
                 return {"error": "Missing package_id"}, 400
@@ -208,7 +277,12 @@ def setup_sponsors_helper_routes(app):
 
             StatsHelper(shared_state).increment_captcha_decryptions_automatic()
 
-            send_discord_message(shared_state, title=title, case="disabled")
+            send_notification(
+                shared_state,
+                title=title,
+                case=NotificationType.DISABLED,
+                details={"reason": reason} if reason else None,
+            )
 
             return f"Package <y>{title}</y> disabled"
 
@@ -227,6 +301,10 @@ def setup_sponsors_helper_routes(app):
             package_id = data.get("package_id")
             # SponsorsHelper might send 'name' or 'title'
             title = data.get("name") or data.get("title")
+            reason = extract_failure_reason(
+                data,
+                default_reason="Too many failed attempts by SponsorsHelper",
+            )
 
             # 1. Try to find package in Protected DB if ID is missing but Title exists
             if not package_id and title:
@@ -273,7 +351,7 @@ def setup_sponsors_helper_routes(app):
                     title,
                     package_id,
                     shared_state,
-                    reason="Too many failed attempts by SponsorsHelper",
+                    reason=reason,
                 )
 
                 # Always try to delete from protected, even if fail() returns False
@@ -292,7 +370,12 @@ def setup_sponsors_helper_routes(app):
                     pass
 
                 if failed:
-                    send_discord_message(shared_state, title=title, case="failed")
+                    send_notification(
+                        shared_state,
+                        title=title,
+                        case=NotificationType.FAILED,
+                        details={"reason": reason},
+                    )
                     return f'Package <y>{title}</y> with ID <y>{package_id}</y> marked as failed!"'
                 else:
                     return f"Package <y>{title}</y> processed."

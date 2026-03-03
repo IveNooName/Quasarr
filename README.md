@@ -14,7 +14,7 @@ indexers. It simply does not know what NZB files are.
 
 Quasarr includes a solution to quickly and easily decrypt protected links.
 [Active monthly Sponsors get access to SponsorsHelper to do so automatically.](https://github.com/rix1337/Quasarr?tab=readme-ov-file#sponsorshelper)
-Alternatively, follow the link from the console output (or discord notification) to solve CAPTCHAs manually.
+Alternatively, follow the link from the console output (or notification) to solve CAPTCHAs manually.
 Quasarr will confidently handle the rest. Some CAPTCHA types require [Tampermonkey](https://www.tampermonkey.net/) to be
 installed in your browser.
 
@@ -172,11 +172,9 @@ docker run -d \
   -v /path/to/config/:/config:rw \
   -e 'INTERNAL_ADDRESS'='http://192.168.0.1:8080' \
   -e 'EXTERNAL_ADDRESS'='https://foo.bar/' \
-  -e 'DISCORD'='https://discord.com/api/webhooks/1234567890/ABCDEFGHIJKLMN' \
   -e 'USER'='admin' \
   -e 'PASS'='change-me' \
   -e 'AUTH'='form' \
-  -e 'SILENT'='True' \
   -e 'TZ'='Europe/Berlin' \
   ghcr.io/rix1337/quasarr:latest
   ```
@@ -185,10 +183,8 @@ docker run -d \
 |--------------------|------------------------------------------------------------------------------------------------------------|
 | `INTERNAL_ADDRESS` | **Required.** Internal URL so Radarr/Sonarr/Lidarr/LazyLibrarian can reach Quasarr. **Must include port.** |
 | `EXTERNAL_ADDRESS` | Optional. External URL (e.g. reverse proxy). Always protect external access with authentication.           |
-| `DISCORD`          | Optional. Discord webhook URL for notifications.                                                           |
 | `USER` / `PASS`    | Optional, but recommended! Username / Password to protect the web UI.                                      |
 | `AUTH`             | Authentication mode. Supported values: `form` or `basic`.                                                  |
-| `SILENT`           | Optional. If `True`, silences all Discord notifications except SponsorHelper error messages. If `MAX`, blocks all Discord messages except SponsorHelper failure messages. ||
 | `TZ`               | Optional. Timezone. Incorrect values may cause HTTPS/SSL issues.                                           |
 
 # Manual setup
@@ -202,12 +198,50 @@ docker run -d \
 ```
 export INTERNAL_ADDRESS=http://192.168.0.1:8080
 export EXTERNAL_ADDRESS=https://foo.bar/
-export DISCORD=https://discord.com/api/webhooks/1234567890/ABCDEFGHIJKLMN
 quasarr
   ```
 
-* `DISCORD` see `DISCORD`docker variable
-* `EXTERNAL_ADDRESS` see `EXTERNAL_ADDRESS`docker variable
+* `EXTERNAL_ADDRESS` see `EXTERNAL_ADDRESS` docker variable
+  
+# Notifications
+Configure notifications in **Web UI → Notifications Configuration**:
+- Set provider credentials
+- Choose notification types per provider
+- *Silent* notifications won't play any sound
+
+## Discord
+
+<details>
+<summary>Configure Discord</summary>
+
+1. Open your Discord server and go to **Server Settings → Integrations → Webhooks**.
+2. Click **New Webhook**, choose the target channel, and copy the **Webhook URL**.
+3. Open Quasarr UI and go to **Notifications Configuration**.
+4. Paste the webhook URL into **Discord → Webhook URL**.
+5. Click **Save Notification Settings** and then **Send Discord Test**.
+
+</details>
+
+## Telegram
+
+<details>
+<summary>Configure Telegram Bot</summary>
+
+1. **Create a bot** — Open Telegram and search for [@BotFather](https://t.me/BotFather). Send `/newbot` and follow the prompts to choose a name and username for your bot.
+2. **Copy the token** — BotFather will reply with an HTTP API token (e.g. `123456789:ABCdefGHI...`). This is your `TELEGRAM_BOT_TOKEN`.
+3. **Start a chat with the bot** — Open a chat with your new bot and send any message (e.g. `/start`). This is required so the bot can send messages back to you.
+4. **Get your chat ID** — Open the following URL in a browser (replace `<TOKEN>` with your bot token):
+   ```
+   https://api.telegram.org/bot<TOKEN>/getUpdates
+   ```
+   Look for `"chat":{"id":` in the JSON response. That number is your `TELEGRAM_CHAT_ID`.
+   > **Tip:** For a group chat, add the bot to the group first, send a message in the group, then call `getUpdates`.
+5. **Configure Quasarr** — Open **Notifications Configuration** in Quasarr UI.
+6. Paste both values into **Telegram → Bot Token / Chat ID**.
+7. Click **Save Notification Settings** and then **Send Telegram Test**.
+  
+</details>
+<br>
 
 # Philosophy
 

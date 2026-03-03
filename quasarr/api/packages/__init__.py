@@ -8,7 +8,7 @@ import quasarr.providers.html_images as images
 from quasarr.api.jdownloader import get_jdownloader_disconnected_page
 from quasarr.downloads.packages import delete_package, get_packages
 from quasarr.providers import shared_state
-from quasarr.providers.auth import require_api_key, require_browser_auth
+from quasarr.providers.auth import require_api_key
 from quasarr.providers.html_templates import render_button, render_centered_html
 from quasarr.storage.categories import get_download_category_emoji
 
@@ -328,7 +328,7 @@ def setup_packages_routes(app):
             redirect("/packages?deleted=0")
 
     @app.get("/api/packages/content")
-    @require_browser_auth
+    @require_api_key
     def packages_content_api():
         """AJAX endpoint - returns just the packages content HTML for background refresh."""
         try:
@@ -556,7 +556,7 @@ def setup_packages_routes(app):
                     }}, 5000);
 
                     try {{
-                        const response = await fetch('/api/packages/content');
+                        const response = await quasarrApiFetch('/api/packages/content');
                         const elapsed = Date.now() - startTime;
 
                         clearTimeout(slowTimer);

@@ -12,13 +12,14 @@ from bottle import HTTPResponse, redirect, request, response
 
 import quasarr.providers.html_images as images
 from quasarr.api.jdownloader import get_jdownloader_disconnected_page
+from quasarr.downloads import submit_final_download_urls
 from quasarr.downloads.linkcrypters.filecrypt import DLC, get_filecrypt_links
 from quasarr.downloads.packages import delete_package
 from quasarr.providers import obfuscated, shared_state
+from quasarr.providers.auth import public_endpoint
 from quasarr.providers.html_templates import render_button, render_centered_html
 from quasarr.providers.log import debug, error, info, trace
 from quasarr.providers.statistics import StatsHelper
-from quasarr.providers.utils import download_package
 from quasarr.storage.categories import (
     get_download_category_from_package_id,
     get_download_category_mirrors,
@@ -531,18 +532,21 @@ def setup_captcha_routes(app):
         </html>""")
 
     @app.get("/captcha/filecrypt.user.js")
+    @public_endpoint
     def serve_filecrypt_user_js():
         content = obfuscated.filecrypt_user_js()
         response.content_type = "application/javascript"
         return content
 
     @app.get("/captcha/hide.user.js")
+    @public_endpoint
     def serve_hide_user_js():
         content = obfuscated.hide_user_js()
         response.content_type = "application/javascript"
         return content
 
     @app.get("/captcha/junkies.user.js")
+    @public_endpoint
     def serve_junkies_user_js():
         sj = shared_state.values["config"]("Hostnames").get("sj")
         dj = shared_state.values["config"]("Hostnames").get("dj")
@@ -552,12 +556,14 @@ def setup_captcha_routes(app):
         return content
 
     @app.get("/captcha/keeplinks.user.js")
+    @public_endpoint
     def serve_keeplinks_user_js():
         content = obfuscated.keeplinks_user_js()
         response.content_type = "application/javascript"
         return content
 
     @app.get("/captcha/tolink.user.js")
+    @public_endpoint
     def serve_tolink_user_js():
         content = obfuscated.tolink_user_js()
         response.content_type = "application/javascript"
@@ -1156,16 +1162,23 @@ def setup_captcha_routes(app):
             password = data.get("password", "")
 
             # Download the package
-            downloaded = download_package(
-                links, title, password, package_id, shared_state
+            submit_result = submit_final_download_urls(
+                shared_state,
+                links,
+                title,
+                password,
+                package_id,
+                remove_protected=True,
             )
 
-            if downloaded:
-                StatsHelper(shared_state).increment_package_with_links(links)
+            if submit_result["success"]:
+                final_links = submit_result["links"]
+                StatsHelper(shared_state).increment_package_with_links(final_links)
                 StatsHelper(shared_state).increment_captcha_decryptions_manual()
-                shared_state.get_db("protected").delete(package_id)
 
-                info(f"Quick transfer successful: <g>{len(links)}</g> links processed")
+                info(
+                    f"Quick transfer successful: <g>{len(final_links)}</g> links processed"
+                )
 
                 # Check if more CAPTCHAs remain
                 remaining_protected = shared_state.get_db(
@@ -1184,7 +1197,7 @@ def setup_captcha_routes(app):
 
                 return render_centered_html(f'''<h1><img src="{images.logo}" type="image/webp" alt="Quasarr logo" class="logo"/>Quasarr</h1>
                 <p><b>✅ Quick Transfer Successful!</b></p>
-                <p>Package "{title}" with {len(links)} link(s) submitted to JDownloader.</p>
+                <p>Package "{title}" with {len(final_links)} link(s) submitted to JDownloader.</p>
                 <p>
                     {solve_button}
                 </p>
@@ -1194,6 +1207,13 @@ def setup_captcha_routes(app):
                 <script>localStorage.removeItem('captcha_attempts_{package_id}');</script>''')
             else:
                 StatsHelper(shared_state).increment_failed_decryptions_manual()
+                if submit_result.get("persisted_failure"):
+                    return render_centered_html(f'''<h1><img src="{images.logo}" type="image/webp" alt="Quasarr logo" class="logo"/>Quasarr</h1>
+                    <p><b>Package marked as failed.</b></p>
+                    <p>{submit_result["reason"]}</p>
+                    <p>
+                        {render_button("Back", "secondary", {"onclick": "location.href='/captcha'"})}
+                    </p>''')
                 return render_centered_html(f'''<h1><img src="{images.logo}" type="image/webp" alt="Quasarr logo" class="logo"/>Quasarr</h1>
                 <p><b>Error:</b> Failed to submit package to JDownloader</p>
                 <p>
@@ -1652,13 +1672,18 @@ def setup_captcha_routes(app):
 
             # Download the package
             if links:
-                downloaded = download_package(
-                    links, title, password, package_id, shared_state
+                submit_result = submit_final_download_urls(
+                    shared_state,
+                    links,
+                    title,
+                    password,
+                    package_id,
+                    remove_protected=True,
                 )
-                if downloaded:
-                    StatsHelper(shared_state).increment_package_with_links(links)
+                if submit_result["success"]:
+                    final_links = submit_result["links"]
+                    StatsHelper(shared_state).increment_package_with_links(final_links)
                     StatsHelper(shared_state).increment_captcha_decryptions_manual()
-                    shared_state.get_db("protected").delete(package_id)
 
                     # Check if there are more CAPTCHAs to solve
                     remaining_protected = shared_state.get_db(
@@ -1679,7 +1704,7 @@ def setup_captcha_routes(app):
 
                     return render_centered_html(f'''<h1><img src="{images.logo}" type="image/webp" alt="Quasarr logo" class="logo"/>Quasarr</h1>
                     <p><b>Success!</b> Package "{title}" bypassed and submitted to JDownloader.</p>
-                    <p>{len(links)} link(s) processed.</p>
+                    <p>{len(final_links)} link(s) processed.</p>
                     <p>
                         {solve_button}
                     </p>
@@ -1689,6 +1714,13 @@ def setup_captcha_routes(app):
                     <script>localStorage.removeItem('captcha_attempts_{package_id}');</script>''')
                 else:
                     StatsHelper(shared_state).increment_failed_decryptions_manual()
+                    if submit_result.get("persisted_failure"):
+                        return render_centered_html(f'''<h1><img src="{images.logo}" type="image/webp" alt="Quasarr logo" class="logo"/>Quasarr</h1>
+                        <p><b>Package marked as failed.</b></p>
+                        <p>{submit_result["reason"]}</p>
+                        <p>
+                            {render_button("Back", "secondary", {"onclick": "location.href='/captcha'"})}
+                        </p>''')
                     return render_centered_html(f'''<h1><img src="{images.logo}" type="image/webp" alt="Quasarr logo" class="logo"/>Quasarr</h1>
                     <p><b>Error:</b> Failed to submit package to JDownloader.</p>
                     <p>
@@ -1720,6 +1752,7 @@ def setup_captcha_routes(app):
 
         links = []
         title = "Unknown Package"
+        failure_reason = ""
         try:
             data = request.json
             token = data.get("token")
@@ -1747,15 +1780,31 @@ def setup_captcha_routes(app):
                     info(f"Decrypted <g>{len(links)}</g> download links for {title}")
                     if not links:
                         raise ValueError("No download links found after decryption")
-                    downloaded = download_package(
-                        links, title, password, package_id, shared_state
+                    submit_result = submit_final_download_urls(
+                        shared_state,
+                        links,
+                        title,
+                        password,
+                        package_id,
+                        remove_protected=True,
                     )
-                    if downloaded:
-                        StatsHelper(shared_state).increment_package_with_links(links)
-                        shared_state.get_db("protected").delete(package_id)
+                    if submit_result["success"]:
+                        final_links = submit_result["links"]
+                        StatsHelper(shared_state).increment_package_with_links(
+                            final_links
+                        )
+                        links = final_links
                     else:
                         links = []
-                        raise RuntimeError("Submitting Download to JDownloader failed")
+                        failure_reason = submit_result.get("reason", "")
+                        if submit_result.get("persisted_failure"):
+                            info(
+                                f'Package "{title}" marked as failed after final mirror-whitelist check'
+                            )
+                        else:
+                            raise RuntimeError(
+                                "Submitting Download to JDownloader failed"
+                            )
                 else:
                     raise ValueError("No download links found")
 
@@ -1774,6 +1823,7 @@ def setup_captcha_routes(app):
 
         return {
             "success": success,
+            "reason": failure_reason,
             "title": title,
             "has_more_captchas": has_more_captchas,
         }

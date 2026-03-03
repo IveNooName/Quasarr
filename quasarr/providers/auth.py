@@ -5,10 +5,12 @@
 import base64
 import hashlib
 import hmac
+import html
 import json
 import os
 import time
 from functools import wraps
+from urllib.parse import urlsplit
 
 from bottle import abort, redirect, request, response
 
@@ -27,6 +29,11 @@ _COOKIE_MAX_AGE = 30 * 24 * 60 * 60  # 30 days
 
 # Stable secret derived from PASS (restart-safe)
 _SECRET_KEY = hashlib.sha256(_AUTH_PASS.encode("utf-8")).digest()
+
+_AUTH_MODE_ATTR = "__quasarr_auth_mode__"
+_AUTH_MODE_PUBLIC = "public"
+_AUTH_MODE_BROWSER = "browser"
+_AUTH_MODE_API_KEY = "api_key"
 
 
 def is_auth_enabled():
@@ -137,14 +144,56 @@ def require_basic_auth():
     return "Authentication required"
 
 
+def is_browser_authenticated():
+    """Check whether the current browser request is authenticated."""
+    if not is_auth_enabled():
+        return False
+    if is_form_auth():
+        return check_form_auth()
+    return check_basic_auth()
+
+
+def _mark_auth_mode(func, mode):
+    setattr(func, _AUTH_MODE_ATTR, mode)
+    return func
+
+
+def public_endpoint(func):
+    """Mark a route as public."""
+    return _mark_auth_mode(func, _AUTH_MODE_PUBLIC)
+
+
+def _normalize_next_url(next_url):
+    """Allow only internal post-login redirects."""
+    if not next_url:
+        return "/"
+
+    candidate = str(next_url).strip()
+    if not candidate.startswith("/") or candidate.startswith("//"):
+        return "/"
+
+    parsed = urlsplit(candidate)
+    if parsed.scheme or parsed.netloc or not parsed.path.startswith("/"):
+        return "/"
+    if parsed.path in {"/login", "/logout"}:
+        return "/"
+
+    normalized = parsed.path or "/"
+    if parsed.query:
+        normalized += f"?{parsed.query}"
+    return normalized
+
+
 def _render_login_page(error=None):
     """Render login form page using Quasarr styling."""
     error_html = (
-        f'<p style="color: #dc3545; margin-bottom: 1rem;"><b>{error}</b></p>'
+        f'<p style="color: #dc3545; margin-bottom: 1rem;"><b>{html.escape(str(error))}</b></p>'
         if error
         else ""
     )
-    next_url = request.query.get("next", "/")
+    next_url = html.escape(
+        _normalize_next_url(request.query.get("next", "/")), quote=True
+    )
 
     # Inline the centered HTML to avoid circular import
     return f'''<html>
@@ -226,7 +275,7 @@ def _handle_login_post():
     """Handle login form submission."""
     username = request.forms.get("username", "")
     password = request.forms.get("password", "")
-    next_url = request.forms.get("next", "/")
+    next_url = _normalize_next_url(request.forms.get("next", "/"))
 
     if username == _AUTH_USER and password == _AUTH_PASS:
         cookie = _create_session_cookie(username)
@@ -264,12 +313,14 @@ def add_auth_routes(app):
     if is_form_auth():
 
         @app.get("/login")
+        @public_endpoint
         def login_get():
             if check_form_auth():
                 redirect("/")
             return _render_login_page()
 
         @app.post("/login")
+        @public_endpoint
         def login_post():
             return _handle_login_post()
 
@@ -279,71 +330,128 @@ def add_auth_routes(app):
 
 
 def add_auth_hook(app, whitelist=None):
-    """Add authentication hook to a Bottle app.
+    """Install the Quasarr authentication policy on a Bottle app.
 
     Args:
         app: Bottle application
-        whitelist: List of path prefixes or suffixes to skip auth
+        whitelist: List of path prefixes or suffixes to keep public
     """
     if whitelist is None:
         whitelist = []
 
-    @app.hook("before_request")
-    def auth_hook():
-        if not is_auth_enabled():
-            return
+    if any(getattr(plugin, "name", None) == "quasarr-auth" for plugin in app.plugins):
+        return
 
-        # Strip query parameters for path matching
-        path = request.path.split("?")[0]
+    class AuthPlugin:
+        name = "quasarr-auth"
+        api = 2
 
-        # Always allow login/logout
-        if path in ["/login", "/logout"]:
-            return
+        def __init__(self, public_whitelist):
+            self.public_whitelist = tuple(public_whitelist)
 
-        # Check whitelist
-        for item in whitelist:
-            if path.startswith(item) or path.endswith(item):
-                return
+        def _is_public_rule(self, rule):
+            for item in self.public_whitelist:
+                if rule.startswith(item) or rule.endswith(item):
+                    return True
+            return False
 
-        # Check authentication
-        if is_form_auth():
-            if not check_form_auth():
-                _invalidate_cookie()
-                redirect(f"/login?next={path}")
-        else:
-            if not check_basic_auth():
-                return require_basic_auth()
+        def _get_auth_mode(self, callback, route):
+            if self._is_public_rule(route.rule):
+                return _AUTH_MODE_PUBLIC
+            return getattr(callback, _AUTH_MODE_ATTR, _AUTH_MODE_BROWSER)
+
+        def apply(self, callback, route):
+            mode = self._get_auth_mode(callback, route)
+            if mode == _AUTH_MODE_PUBLIC:
+                return callback
+            if mode == _AUTH_MODE_API_KEY:
+
+                @wraps(callback)
+                def api_key_wrapper(*args, **kwargs):
+                    api_key = Config("API").get("key")
+                    request_api_key = _get_request_api_key()
+                    if not request_api_key:
+                        return abort(401, "Missing API Key")
+                    if request_api_key != api_key:
+                        return abort(403, "Invalid API Key")
+                    return callback(*args, **kwargs)
+
+                return api_key_wrapper
+
+            @wraps(callback)
+            def browser_wrapper(*args, **kwargs):
+                if not is_auth_enabled():
+                    return callback(*args, **kwargs)
+
+                path = request.path.split("?")[0]
+
+                if is_form_auth():
+                    if not check_form_auth():
+                        _invalidate_cookie()
+                        if path == "/logout":
+                            redirect("/login")
+                        redirect(f"/login?next={path}")
+                else:
+                    if not check_basic_auth():
+                        return require_basic_auth()
+
+                return callback(*args, **kwargs)
+
+            return browser_wrapper
+
+    app.install(AuthPlugin(whitelist))
+
+
+def _get_request_api_key():
+    api_key = request.query.get("apikey") or request.forms.get("apikey")
+    if api_key:
+        return api_key
+
+    api_key = request.headers.get("X-API-Key") or request.headers.get("X-Api-Key")
+    if api_key:
+        return api_key
+
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header.startswith("Bearer "):
+        return auth_header[7:].strip()
+
+    return None
 
 
 def require_api_key(func):
-    @wraps(func)
-    def decorated(*args, **kwargs):
-        api_key = Config("API").get("key")
-        if not request.query.apikey:
-            return abort(401, "Missing API Key")
-        if request.query.apikey != api_key:
-            return abort(403, "Invalid API Key")
-        return func(*args, **kwargs)
-
-    return decorated
+    """Mark a route to require the Quasarr API key."""
+    return _mark_auth_mode(func, _AUTH_MODE_API_KEY)
 
 
 def require_browser_auth(func):
-    @wraps(func)
-    def decorated(*args, **kwargs):
-        if not is_auth_enabled():
-            return func(*args, **kwargs)
+    """Mark a route to require browser authentication."""
+    return _mark_auth_mode(func, _AUTH_MODE_BROWSER)
 
-        path = request.path.split("?")[0]
 
-        if is_form_auth():
-            if not check_form_auth():
-                _invalidate_cookie()
-                redirect(f"/login?next={path}")
-        else:
-            if not check_basic_auth():
-                return require_basic_auth()
+def audit_route_auth_modes(app, api_key_prefixes=None, public_whitelist=None):
+    """Fail fast if protected route groups are not explicitly API-key guarded."""
+    if api_key_prefixes is None:
+        api_key_prefixes = ()
+    if public_whitelist is None:
+        public_whitelist = ()
 
-        return func(*args, **kwargs)
+    violations = []
+    for route in app.routes:
+        rule = route.rule
 
-    return decorated
+        is_public = any(
+            rule.startswith(item) or rule.endswith(item) for item in public_whitelist
+        )
+        mode = (
+            _AUTH_MODE_PUBLIC
+            if is_public
+            else getattr(route.callback, _AUTH_MODE_ATTR, _AUTH_MODE_BROWSER)
+        )
+
+        if any(rule.startswith(prefix) for prefix in api_key_prefixes):
+            if mode != _AUTH_MODE_API_KEY:
+                violations.append(f"{route.method} {rule} -> {mode}")
+
+    if violations:
+        joined = ", ".join(sorted(violations))
+        raise RuntimeError(f"Auth policy violation: {joined}")

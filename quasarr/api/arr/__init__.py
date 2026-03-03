@@ -60,8 +60,17 @@ def _dedupe_releases(releases):
     return deduped, removed
 
 
+def _xml_text(value):
+    return sax_utils.escape(str(value or ""))
+
+
+def _xml_attr(value):
+    return sax_utils.quoteattr(str(value or ""))
+
+
 def setup_arr_routes(app):
     @app.get("/download/")
+    @require_api_key
     def fake_nzb_file():
         payload = request.query.payload
         decoded_payload = parse_payload(payload)
@@ -514,8 +523,8 @@ def setup_arr_routes(app):
                         release = release.get("details", {})
 
                         # Ensure clean XML output
-                        title = sax_utils.escape(release.get("title", ""))
-                        source = sax_utils.escape(release.get("source", ""))
+                        title = str(release.get("title", "") or "")
+                        source = str(release.get("source", "") or "")
                         if not title:
                             debug(f"Title missing for release from {source}")
                             continue
@@ -528,15 +537,22 @@ def setup_arr_routes(app):
                         if not pub_date:
                             pub_date = now_rfc822
 
-                        items += f'''
+                        title_xml = _xml_text(title)
+                        link_xml = _xml_text(release.get("link", ""))
+                        source_xml = _xml_text(source)
+                        pub_date_xml = _xml_text(pub_date)
+                        enclosure_url = _xml_attr(release.get("link", ""))
+                        enclosure_length = _xml_attr(release.get("size", 0))
+
+                        items += f"""
                         <item>
-                            <title>{title}</title>
-                            <guid isPermaLink="True">{release.get("link", "")}</guid>
-                            <link>{release.get("link", "")}</link>
-                            <comments>{source}</comments>
-                            <pubDate>{pub_date}</pubDate>
-                            <enclosure url="{release.get("link", "")}" length="{release.get("size", 0)}" type="application/x-nzb" />
-                        </item>'''
+                            <title>{title_xml}</title>
+                            <guid isPermaLink="True">{link_xml}</guid>
+                            <link>{link_xml}</link>
+                            <comments>{source_xml}</comments>
+                            <pubDate>{pub_date_xml}</pubDate>
+                            <enclosure url={enclosure_url} length={enclosure_length} type="application/x-nzb" />
+                        </item>"""
 
                     requires_placeholder_item = not getattr(
                         request.query, "imdbid", ""

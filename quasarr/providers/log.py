@@ -73,6 +73,8 @@ _context_replace = {
     "log": "📝",  # /quasarr/providers/log.py
     "myjd_api": "🔑",  # /quasarr/providers/myjd_api.py
     "notifications": "🔔",  # /quasarr/providers/notifications.py
+    "discord": "💬",  # /quasarr/providers/notifications/discord.py
+    "telegram": "📱",  # /quasarr/providers/notifications/telegram.py
     "shared_state": "🧠",  # /quasarr/providers/shared_state.py
     "sessions": "🍪",  # /quasarr/providers/sessions/*
     "search": "🔍",  # /quasarr/search/*

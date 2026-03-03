@@ -31,7 +31,6 @@ ENV USER=""
 ENV PASS=""
 ENV INTERNAL_ADDRESS=""
 ENV EXTERNAL_ADDRESS=""
-ENV DISCORD=""
 ENV LOG_MAX_WIDTH="120"
 
 # Restart loop: exit 0 = restart, exit non-zero = stop container
