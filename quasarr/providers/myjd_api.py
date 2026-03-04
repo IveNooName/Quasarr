@@ -45,15 +45,15 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 _BS = 16
 
 
-class MYJDException(BaseException):
+class MYJDException(Exception):
     pass
 
 
-class TokenExpiredException(BaseException):
+class TokenExpiredException(Exception):
     pass
 
 
-class RequestTimeoutException(BaseException):
+class RequestTimeoutException(Exception):
     pass
 
 
