@@ -80,7 +80,7 @@ _context_replace = {
     "search": "🔍",  # /quasarr/search/*
     "storage": "💽",  # /quasarr/storage/*
     "categories": "🔠",  # /quasarr/storage/categories.py
-    "setup": "🛠️",  # /quasarr/storage/setup.py
+    "setup": "🛠️",  # /quasarr/storage/setup/*
     "sqlite_database": "🗃️",  # /quasarr/storage/sqlite_database.py
     "sources": "🧲",  # /quasarr/*/sources/*
     "utils": "🧰",  # /quasarr/providers/utils.py
