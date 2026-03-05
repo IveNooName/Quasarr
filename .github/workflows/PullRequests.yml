@@ -3,9 +3,6 @@ name: Pull Requests
 on:
   workflow_dispatch:
   pull_request:
-  push:
-    branches:
-      - dev
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -303,7 +300,7 @@ jobs:
             ${{ env.GHCR_ENDPOINT }}:${TAG_ARM64}
 
   notify:
-    name: Notify Discord & PR
+    name: Notify PR
     needs: [ quality-check, version, beta-release, merge-docker-manifest ]
     if: needs.quality-check.outputs.changes_pushed != 'true' && needs.beta-release.result == 'success'
     runs-on: ubuntu-latest
@@ -316,17 +313,12 @@ jobs:
       - name: Send Notifications
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
           VERSION: ${{ needs.version.outputs.version }}
           EPOCH: ${{ needs.version.outputs.epoch }}
           REPO: ${{ github.repository }}
         run: |
           echo "📢 Notifying stakeholders..."
           RELEASE_BODY=$(gh release view beta --json body --jq .body)
-          if [ -n "$DISCORD_WEBHOOK" ]; then
-            jq -n --arg title "🚀 New Beta Build: $VERSION ($EPOCH)" --arg url "https://github.com/$REPO/releases/tag/beta" '{content: null, flags: 4096, embeds: [{title: $title, url: $url, color: 5814783}]}' > discord_payload.json
-            curl -H "Content-Type: application/json" -d @discord_payload.json "$DISCORD_WEBHOOK"
-          fi
           PR_NUMBER=$(gh pr list --search "${{ github.sha }}" --state merged --json number --jq '.[0].number')
           if [ -n "$PR_NUMBER" ]; then
             echo "## 🚀 Beta Release $VERSION is Live!" > pr_comment.md
