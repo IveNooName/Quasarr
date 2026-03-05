@@ -327,7 +327,7 @@ def get_api(shared_state_dict, shared_state_lock):
                     </p>
 
                     <div class="timeout-slow-mode-section">
-                        <h4>Timeouts</h4>
+                        <label class="timeout-slow-mode-heading">Timeouts</label>
                         <p class="api-hint">
                             By default, Quasarr uses strict request timeouts so manual searches stay within a reasonable timeframe.
                             Enable slow mode only if you are willing to wait longer on slow sites.
@@ -336,7 +336,7 @@ def get_api(shared_state_dict, shared_state_lock):
                             {timeout_slow_mode_rows}
                         </div>
                         <div id="timeout-slow-mode-status" class="notification-status"></div>
-                        <p>{render_button("Save Slow Mode Settings", "primary", {"onclick": "saveTimeoutSlowModeSettings()", "type": "button", "id": "timeoutSlowModeSaveBtn"})}</p>
+                        <p class="timeout-slow-mode-actions">{render_button("Save Timeout Settings", "primary", {"onclick": "saveTimeoutSlowModeSettings()", "type": "button", "id": "timeoutSlowModeSaveBtn"})}</p>
                     </div>
                 </div>
             </details>
@@ -619,9 +619,15 @@ def get_api(shared_state_dict, shared_state_lock):
                 border-top: 1px solid var(--card-border, #dee2e6);
                 text-align: left;
             }}
-            .timeout-slow-mode-section h4 {{
-                margin: 0 0 8px 0;
-                font-size: 1em;
+            .timeout-slow-mode-heading {{
+                display: block;
+                font-weight: 500;
+                margin-bottom: 6px;
+                font-size: 0.95em;
+                text-align: left;
+            }}
+            .timeout-slow-mode-actions {{
+                text-align: center;
             }}
             .timeout-slow-mode-value {{
                 margin-top: 2px;
@@ -1148,7 +1154,7 @@ def get_api(shared_state_dict, shared_state_lock):
 
             async function saveTimeoutSlowModeSettings() {{
                 var saveButton = document.getElementById('timeoutSlowModeSaveBtn');
-                setNotificationStatus('timeout-slow-mode-status', 'Saving slow mode settings...', true);
+                setNotificationStatus('timeout-slow-mode-status', 'Saving timeout settings...', true);
 
                 if (saveButton) {{
                     saveButton.disabled = true;
@@ -1163,7 +1169,7 @@ def get_api(shared_state_dict, shared_state_lock):
                     }});
                     var data = await response.json();
                     if (!response.ok || !data.success) {{
-                        throw new Error(data.message || 'Failed to save slow mode settings');
+                        throw new Error(data.message || 'Failed to save timeout settings');
                     }}
 
                     if (data.settings && typeof data.settings === 'object') {{
@@ -1184,7 +1190,7 @@ def get_api(shared_state_dict, shared_state_lock):
                 }} finally {{
                     if (saveButton) {{
                         saveButton.disabled = false;
-                        saveButton.textContent = 'Save Slow Mode Settings';
+                        saveButton.textContent = 'Save Timeout Settings';
                     }}
                 }}
             }}
