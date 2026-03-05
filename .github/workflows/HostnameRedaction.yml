@@ -26,6 +26,7 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           REPO: ${{ github.repository }}
           SENDER: ${{ github.event.sender.login }}
+          GITHUB_ACTOR: ${{ github.actor }}
           # Issue fields
           ISSUE_BODY: ${{ github.event.issue.body }}
           ISSUE_TITLE: ${{ github.event.issue.title }}
@@ -43,6 +44,7 @@ jobs:
           import os
           import re
           import subprocess
+          import time
           import urllib.request
 
           # Load environment
@@ -50,6 +52,7 @@ jobs:
           EVENT_NAME = os.environ.get("EVENT_NAME", "")
           REPO = os.environ.get("REPO", "")
           SENDER = os.environ.get("SENDER", "")
+          GITHUB_ACTOR = os.environ.get("GITHUB_ACTOR", "")
 
           ISSUE_BODY = os.environ.get("ISSUE_BODY") or ""
           ISSUE_TITLE = os.environ.get("ISSUE_TITLE") or ""
@@ -75,9 +78,16 @@ jobs:
           else:
               NUMBER = ISSUE_NUMBER
 
-          # Prevent infinite loop when the action itself edits
-          if SENDER.endswith("[bot]"):
-              print(f"Edit by bot ({SENDER}), skipping")
+          # Prevent self-trigger loops when actions edit/comment.
+          sender_lower = (SENDER or "").lower().strip()
+          actor_lower = (GITHUB_ACTOR or "").lower().strip()
+          if (
+              sender_lower.endswith("[bot]")
+              or sender_lower == "github-actions"
+              or actor_lower.endswith("[bot]")
+              or actor_lower == "github-actions"
+          ):
+              print(f"Event by bot (sender={SENDER}, actor={GITHUB_ACTOR}), skipping")
               exit(0)
 
           if not HOSTNAMES_URL:
@@ -88,14 +98,25 @@ jobs:
               print("Could not determine issue/PR number, skipping")
               exit(0)
 
-          # Fetch hostname list
-          try:
-              req = urllib.request.Request(HOSTNAMES_URL, headers={"User-Agent": "Mozilla/5.0"})
-              with urllib.request.urlopen(req, timeout=10) as resp:
-                  hostnames_data = resp.read().decode("utf-8")
-          except Exception as e:
-              print(f"Failed to fetch hostnames: {e}")
-              exit(1)
+          # Fetch hostname list (retry to avoid transient network timeouts)
+          hostnames_data = ""
+          fetch_error = None
+          for attempt in range(1, 4):
+              try:
+                  req = urllib.request.Request(HOSTNAMES_URL, headers={"User-Agent": "Mozilla/5.0"})
+                  with urllib.request.urlopen(req, timeout=10) as resp:
+                      hostnames_data = resp.read().decode("utf-8")
+                  fetch_error = None
+                  break
+              except Exception as e:
+                  fetch_error = e
+                  print(f"Failed to fetch hostnames (attempt {attempt}/3): {e}")
+                  if attempt < 3:
+                      time.sleep(attempt * 2)
+
+          if not hostnames_data:
+              print(f"Failed to fetch hostnames after retries, skipping: {fetch_error}")
+              exit(0)
 
           # Parse hostname list into domain_base -> alias mapping
           domain_to_alias = {}
@@ -133,6 +154,31 @@ jobs:
 
           def post_warning(count, target_type):
               """Post a warning comment about redacted hostnames."""
+              warning_marker = f"automatically redacted from this {target_type}"
+
+              # Avoid duplicate warning comments if this workflow is retriggered.
+              try:
+                  existing_comments_raw = subprocess.check_output(
+                      ["gh", "api", f"/repos/{REPO}/issues/{NUMBER}/comments"],
+                      text=True,
+                  )
+                  existing_comments = json.loads(existing_comments_raw)
+              except Exception as e:
+                  print(f"Could not load existing comments for deduplication: {e}")
+                  existing_comments = []
+
+              for comment in existing_comments:
+                  comment_body = (comment.get("body") or "").lower()
+                  user_login = ((comment.get("user") or {}).get("login") or "").lower()
+                  if warning_marker in comment_body and (
+                      user_login == "github-actions[bot]"
+                      or user_login == "github-actions"
+                  ):
+                      print(
+                          f"Warning already posted for this {target_type}; skipping duplicate comment"
+                      )
+                      return
+
               if count == 1:
                   msg = f"⚠️ **1 hostname was automatically redacted from this {target_type}.**"
               else:

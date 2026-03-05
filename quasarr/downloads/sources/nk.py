@@ -63,23 +63,10 @@ class Source(AbstractDownloadSource):
             if not href.lower().startswith(("http://", "https://")):
                 href = "https://" + host + href
 
-            try:
-                r = requests.head(
-                    href,
-                    headers=headers,
-                    allow_redirects=True,
-                    timeout=DOWNLOAD_REQUEST_TIMEOUT_SECONDS,
-                )
-                r.raise_for_status()
-                href = r.url
-            except Exception as e:
-                info(f"Could not resolve download link for {title}: {e}")
-                mark_hostname_issue(
-                    Source.initials,
-                    "download",
-                    str(e) if "e" in dir() else "Download error",
-                )
-                continue
+            if _is_nk_redirect_link(href, host):
+                resolved_href = _resolve_nk_redirect(session, href, headers, title)
+                if resolved_href:
+                    href = resolved_href
 
             candidates.append([href, mirror])
 
@@ -90,6 +77,45 @@ class Source(AbstractDownloadSource):
 
 
 _SUPPORTED_MIRRORS = {"rapidgator", "ddownload"}
+
+
+def _normalize_host(host):
+    normalized = (host or "").lower().strip()
+    if normalized.startswith("www."):
+        normalized = normalized[4:]
+    return normalized
+
+
+def _is_nk_redirect_link(url, host):
+    try:
+        parsed = urlparse(url)
+    except Exception:
+        return False
+
+    if _normalize_host(parsed.netloc) != _normalize_host(host):
+        return False
+
+    return parsed.path.startswith("/go/")
+
+
+def _resolve_nk_redirect(session, url, headers, title):
+    try:
+        response = session.get(
+            url,
+            headers=headers,
+            allow_redirects=True,
+            timeout=DOWNLOAD_REQUEST_TIMEOUT_SECONDS,
+        )
+        response.raise_for_status()
+
+        if "/404.html" in response.url:
+            info(f"NK redirect resolved to 404 for {title}: {response.url}")
+            return None
+
+        return response.url
+    except Exception as e:
+        info(f"Could not resolve NK redirect for {title}: {e}")
+        return None
 
 
 def _normalize_mirror_name(mirror_name):
