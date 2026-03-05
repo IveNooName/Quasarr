@@ -47,7 +47,6 @@ services:
 #      - QUASARR_URL=http://192.168.0.1:8080
 #      - QUASARR_API_KEY=your_quasarr_api_key_here
 #      - APIKEY_2CAPTCHA=your_2captcha_api_key_here
-#      - DEATHBYCAPTCHA_TOKEN=your_deathbycaptcha_token_here
 #      - FLARESOLVERR_URL=http://10.10.0.1:8191/v1
 #    volumes:
 #      - ${CONFIG_VOLUMES}/sponsorshelper:/config
