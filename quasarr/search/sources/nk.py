@@ -117,6 +117,7 @@ class Source(AbstractSearchSource):
                 else:
                     continue
 
+                release_imdb_id = None
                 imdb_a = result.select_one("a.imdb")
                 if imdb_a and imdb_a.get("href"):
                     try:
