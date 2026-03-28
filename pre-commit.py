@@ -50,8 +50,23 @@ def task_format():
     return False
 
 
+def task_tests():
+    print("\n🧪 --- 2. TESTS ---")
+
+    result = run(
+        ["uv", "run", "python", "-m", "unittest", "discover", "-s", "tests"],
+        check=False,
+    )
+
+    if result.returncode != 0:
+        print("❌ Test suite failed. Fix the failures before staging.")
+        sys.exit(1)
+
+    print("✅ Test suite passed.")
+
+
 def task_upgrade_deps():
-    print("\n📦 --- 2. DEPENDENCIES ---")
+    print("\n📦 --- 3. DEPENDENCIES ---")
     try:
         with open(PYPROJECT_FILE, "rb") as f:
             pyproj = tomllib.load(f)
@@ -94,7 +109,7 @@ def task_upgrade_deps():
 
 
 def task_version_bump():
-    print("\n🏷️  --- 3. VERSION CHECK ---")
+    print("\n🏷️  --- 4. VERSION CHECK ---")
     new_v = ""
 
     def get_ver(content):
@@ -198,12 +213,13 @@ def main():
     fixed_deps = False
     if do_upgrade:
         fixed_deps = task_upgrade_deps()
+    task_tests()
 
     fixed_version, new_v = task_version_bump()
 
     # --- CI Specific Logic ---
     if is_ci and (fixed_format or fixed_deps or fixed_version):
-        print("\n📤 --- 4. PUSH & REPORT ---")
+        print("\n📤 --- 5. PUSH & REPORT ---")
 
         run(["git", "config", "--global", "user.name", "github-actions[bot]"])
         run(
