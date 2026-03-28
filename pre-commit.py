@@ -107,32 +107,65 @@ def task_version_bump():
             p.append("0")
         try:
             p[-1] = str(int(p[-1]) + 1)
-        except:
+        except Exception:
             p.append("1")
         return ".".join(p)
 
     def ver_tuple(v):
         try:
             return tuple(map(int, v.split(".")))
-        except:
+        except Exception:
             return (0, 0, 0)
 
     try:
         print("🌐 Fetching remote to compare versions...")
-        run(["git", "fetch", "origin", "main"], check=False)
-        try:
-            base = subprocess.check_output(
-                ["git", "merge-base", "HEAD", "origin/main"], text=True
-            ).strip()
-        except:
-            base = "origin/main"
+
+        # Skip remote comparison cleanly in local environments without origin/main.
+        remote_ref = "origin/main"
+        has_origin = (
+            subprocess.run(
+                ["git", "remote", "get-url", "origin"],
+                check=False,
+                capture_output=True,
+                text=True,
+            ).returncode
+            == 0
+        )
+        if has_origin:
+            run(["git", "fetch", "origin", "main"], check=False)
+            remote_head = subprocess.run(
+                ["git", "rev-parse", "--verify", "origin/main"],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            if remote_head.returncode == 0:
+                try:
+                    base = subprocess.check_output(
+                        ["git", "merge-base", "HEAD", remote_ref], text=True
+                    ).strip()
+                except Exception:
+                    base = remote_ref
+            else:
+                print(
+                    "ℹ️  origin/main not available. Skipping remote version comparison."
+                )
+                base = None
+        else:
+            print(
+                "ℹ️  No 'origin' remote configured. Skipping remote version comparison."
+            )
+            base = None
 
         # Read Main Version
         try:
-            main_v_content = subprocess.check_output(
-                ["git", "show", f"{base}:{VERSION_FILE.as_posix()}"], text=True
-            )
-            main_v = get_ver(main_v_content)
+            if base:
+                main_v_content = subprocess.check_output(
+                    ["git", "show", f"{base}:{VERSION_FILE.as_posix()}"], text=True
+                )
+                main_v = get_ver(main_v_content)
+            else:
+                main_v = None
         except Exception:
             main_v = None
 
