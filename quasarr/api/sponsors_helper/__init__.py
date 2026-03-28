@@ -40,7 +40,113 @@ def require_helper_active(func):
     return wrapper
 
 
+def normalize_helper_supported_urls(url_patterns):
+    if not isinstance(url_patterns, (list, tuple, set)):
+        return []
+
+    normalized_patterns = []
+    seen_patterns = set()
+
+    for pattern in url_patterns:
+        if pattern is None:
+            continue
+
+        normalized_pattern = str(pattern).strip().lower()
+        if not normalized_pattern or normalized_pattern in seen_patterns:
+            continue
+
+        normalized_patterns.append(normalized_pattern)
+        seen_patterns.add(normalized_pattern)
+
+    return normalized_patterns
+
+
+def extract_helper_candidate_url(link):
+    if isinstance(link, (list, tuple)) and link:
+        candidate = link[0]
+    else:
+        candidate = link
+
+    if not isinstance(candidate, str):
+        return ""
+
+    return candidate.strip()
+
+
+def is_rapidgator_link(link):
+    if isinstance(link, (list, tuple)) and len(link) > 1:
+        mirror_name = link[1]
+        if isinstance(mirror_name, str) and "rapidgator" in mirror_name.lower():
+            return True
+
+    return "rapidgator" in extract_helper_candidate_url(link).lower()
+
+
+def prioritize_helper_supported_links(links, supported_url_patterns):
+    if not isinstance(links, list):
+        return [], []
+
+    normalized_patterns = normalize_helper_supported_urls(supported_url_patterns)
+    if not normalized_patterns:
+        return list(links), list(links)
+
+    supported_links = []
+    unsupported_links = []
+
+    for link in links:
+        candidate_url = extract_helper_candidate_url(link).lower()
+        if candidate_url and any(
+            pattern in candidate_url for pattern in normalized_patterns
+        ):
+            supported_links.append(link)
+        else:
+            unsupported_links.append(link)
+
+    return supported_links + unsupported_links, supported_links
+
+
+def select_helper_package(protected_packages, supported_url_patterns):
+    for package in protected_packages:
+        data = json.loads(package[1])
+        if "disabled" in data:
+            continue
+
+        raw_links = data.get("links")
+        if not isinstance(raw_links, list) or not raw_links:
+            continue
+
+        rapid = [ln for ln in raw_links if is_rapidgator_link(ln)]
+        others = [ln for ln in raw_links if not is_rapidgator_link(ln)]
+        prioritized_links = rapid + others
+
+        prioritized_links, supported_links = prioritize_helper_supported_links(
+            prioritized_links,
+            supported_url_patterns,
+        )
+        if supported_url_patterns and not supported_links:
+            continue
+
+        return package[0], data, prioritized_links
+
+    return None
+
+
 def setup_sponsors_helper_routes(app):
+    def get_supported_urls_from_request():
+        payload = request.json if request.method == "POST" else None
+        if isinstance(payload, dict) and "supported_urls" in payload:
+            return normalize_helper_supported_urls(payload.get("supported_urls"))
+
+        query_values = request.query.getall("supported_url")
+        if query_values:
+            return normalize_helper_supported_urls(query_values)
+
+        query_csv = request.query.get("supported_urls")
+        if query_csv:
+            return normalize_helper_supported_urls(query_csv.split(","))
+
+        return []
+
     def extract_failure_reason(data, default_reason=None):
         if not isinstance(data, dict):
             return default_reason
@@ -102,6 +208,7 @@ def setup_sponsors_helper_routes(app):
         return {"mirrors": mirrors}
 
     @app.get("/sponsors_helper/api/to_decrypt/")
+    @app.post("/sponsors_helper/api/to_decrypt/")
     @require_api_key
     def to_decrypt_api():
         shared_state.update("helper_active", True)
@@ -111,26 +218,19 @@ def setup_sponsors_helper_routes(app):
             if not protected:
                 return abort(404, "No encrypted packages found")
 
-            # Find the first package that hasn't been disabled
-            selected_package = None
-            for package in protected:
-                data = json.loads(package[1])
-                if "disabled" not in data:
-                    selected_package = (package[0], data)
-                    break
+            supported_url_patterns = get_supported_urls_from_request()
+
+            # Issue #350: only hand SponsorsHelper packages where at least one URL
+            # matches the helper's advertised support, and move that URL to the front.
+            selected_package = select_helper_package(protected, supported_url_patterns)
 
             if not selected_package:
                 return abort(404, "No valid packages found")
 
-            package_id, data = selected_package
+            package_id, data, prioritized_links = selected_package
             title = data["title"]
-            links = data["links"]
             mirror = None if (mirror := data.get("mirror")) == "None" else mirror
             password = data["password"]
-
-            rapid = [ln for ln in links if "rapidgator" in ln[1].lower()]
-            others = [ln for ln in links if "rapidgator" not in ln[1].lower()]
-            prioritized_links = rapid + others
 
             return {
                 "to_decrypt": {
