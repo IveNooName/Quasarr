@@ -1229,6 +1229,132 @@ def format_size(size_bytes):
         return "Unknown"
 
 
+def get_download_item_name(item):
+    return item.get("filename") or item.get("name") or "Unknown"
+
+
+def delete_download_items(client, items):
+    nzo_id_to_title = {}
+    for item in items:
+        nzo_id = item.get("nzo_id")
+        if not nzo_id:
+            continue
+        nzo_id_to_title[nzo_id] = get_download_item_name(item)
+
+    if not nzo_id_to_title:
+        console.print("[yellow]No deletable packages found.[/yellow]")
+        return True
+
+    deleted_count = 0
+    deletion_errors = []
+
+    try:
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TaskProgressColumn(),
+            transient=True,
+        ) as progress:
+            task_id = progress.add_task(
+                "Deleting packages...", total=len(nzo_id_to_title)
+            )
+
+            with concurrent.futures.ThreadPoolExecutor(
+                max_workers=max(1, min(10, len(nzo_id_to_title)))
+            ) as executor:
+                future_to_id = {
+                    executor.submit(client.delete_download, nzo_id, title): nzo_id
+                    for nzo_id, title in nzo_id_to_title.items()
+                }
+
+                for future in concurrent.futures.as_completed(future_to_id):
+                    nzo_id = future_to_id[future]
+                    try:
+                        success, error = future.result()
+                        if success:
+                            deleted_count += 1
+                        else:
+                            deletion_errors.append(
+                                f"{nzo_id_to_title.get(nzo_id, nzo_id)} ({nzo_id}): {error}"
+                            )
+                    except Exception as exc:
+                        deletion_errors.append(
+                            f"{nzo_id_to_title.get(nzo_id, nzo_id)} ({nzo_id}): {exc}"
+                        )
+                    progress.advance(task_id)
+    except KeyboardInterrupt:
+        console.print("[red]Cancelled delete-all operation.[/red]")
+        return False
+
+    total = len(nzo_id_to_title)
+    if deletion_errors:
+        console.print(f"[yellow]Deleted {deleted_count}/{total} packages.[/yellow]")
+        console.print("[red]Failed deletions:[/red]")
+        for error in deletion_errors:
+            console.print(f"  - {error}")
+        return False
+
+    console.print(f"[green]Deleted {deleted_count} packages.[/green]")
+    return True
+
+
+def delete_all_packages(client, interactive=True):
+    if interactive:
+        clear_screen()
+        results = LoadingScreen("Fetching Downloads", client.get_downloads).run()
+        clear_screen()
+        if results is None:
+            return None
+    else:
+        results = client.get_downloads()
+
+    if isinstance(results, tuple):
+        if len(results) == 3:
+            queue, history, _ = results
+        elif len(results) == 2:
+            queue, history = results
+        else:
+            queue, history = [], []
+    else:
+        queue, history = [], []
+
+    all_items = []
+    for item in queue:
+        item = item.copy()
+        item["type"] = "queue"
+        all_items.append(item)
+    for item in history:
+        item = item.copy()
+        item["type"] = "history"
+        all_items.append(item)
+
+    if not all_items:
+        console.print(
+            Panel("No packages to delete.", title="Downloads", border_style="blue")
+        )
+        if interactive:
+            press_any_key()
+            clear_screen()
+        return True
+
+    deletable_count = len(
+        {item.get("nzo_id") for item in all_items if item.get("nzo_id")}
+    )
+    if (
+        interactive
+        and not questionary.confirm(f"Delete all {deletable_count} packages?").ask()
+    ):
+        return None
+
+    success = delete_download_items(client, all_items)
+
+    if interactive:
+        time.sleep(2)
+
+    return success
+
+
 def show_downloads(client):
     last_idx = 0
     # For downloads, we skip "newest/oldest" as API data might be inconsistent for sorting
@@ -2187,6 +2313,7 @@ def run_cli():
                     ("🔍 Searches", "search"),
                     ("🗞️ Feeds", "feeds"),
                     ("⬇️ Downloads", "downloads"),
+                    ("🗑️ Delete All Packages", "delete_all_packages"),
                     ("🔓 Enable Sponsor Status", "enable_sponsor"),
                     ("🌐 Open Web UI", "web"),
                     ("🚪 Exit", "exit"),
@@ -2199,6 +2326,8 @@ def run_cli():
                 handle_searches_menu(client)
             elif choice == "downloads":
                 show_downloads(client)
+            elif choice == "delete_all_packages":
+                delete_all_packages(client, interactive=True)
             elif choice == "test_hostnames":
                 handle_hostname_test(client)
             elif choice == "enable_sponsor":

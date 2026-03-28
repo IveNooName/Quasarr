@@ -50,8 +50,23 @@ def task_format():
     return False
 
 
+def task_tests():
+    print("\n🧪 --- 2. TESTS ---")
+
+    result = run(
+        ["uv", "run", "python", "-m", "unittest", "discover", "-s", "tests"],
+        check=False,
+    )
+
+    if result.returncode != 0:
+        print("❌ Test suite failed. Fix the failures before staging.")
+        sys.exit(1)
+
+    print("✅ Test suite passed.")
+
+
 def task_upgrade_deps():
-    print("\n📦 --- 2. DEPENDENCIES ---")
+    print("\n📦 --- 3. DEPENDENCIES ---")
     try:
         with open(PYPROJECT_FILE, "rb") as f:
             pyproj = tomllib.load(f)
@@ -94,7 +109,7 @@ def task_upgrade_deps():
 
 
 def task_version_bump():
-    print("\n🏷️  --- 3. VERSION CHECK ---")
+    print("\n🏷️  --- 4. VERSION CHECK ---")
     new_v = ""
 
     def get_ver(content):
@@ -107,32 +122,65 @@ def task_version_bump():
             p.append("0")
         try:
             p[-1] = str(int(p[-1]) + 1)
-        except:
+        except Exception:
             p.append("1")
         return ".".join(p)
 
     def ver_tuple(v):
         try:
             return tuple(map(int, v.split(".")))
-        except:
+        except Exception:
             return (0, 0, 0)
 
     try:
         print("🌐 Fetching remote to compare versions...")
-        run(["git", "fetch", "origin", "main"], check=False)
-        try:
-            base = subprocess.check_output(
-                ["git", "merge-base", "HEAD", "origin/main"], text=True
-            ).strip()
-        except:
-            base = "origin/main"
+
+        # Skip remote comparison cleanly in local environments without origin/main.
+        remote_ref = "origin/main"
+        has_origin = (
+            subprocess.run(
+                ["git", "remote", "get-url", "origin"],
+                check=False,
+                capture_output=True,
+                text=True,
+            ).returncode
+            == 0
+        )
+        if has_origin:
+            run(["git", "fetch", "origin", "main"], check=False)
+            remote_head = subprocess.run(
+                ["git", "rev-parse", "--verify", "origin/main"],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            if remote_head.returncode == 0:
+                try:
+                    base = subprocess.check_output(
+                        ["git", "merge-base", "HEAD", remote_ref], text=True
+                    ).strip()
+                except Exception:
+                    base = remote_ref
+            else:
+                print(
+                    "ℹ️  origin/main not available. Skipping remote version comparison."
+                )
+                base = None
+        else:
+            print(
+                "ℹ️  No 'origin' remote configured. Skipping remote version comparison."
+            )
+            base = None
 
         # Read Main Version
         try:
-            main_v_content = subprocess.check_output(
-                ["git", "show", f"{base}:{VERSION_FILE.as_posix()}"], text=True
-            )
-            main_v = get_ver(main_v_content)
+            if base:
+                main_v_content = subprocess.check_output(
+                    ["git", "show", f"{base}:{VERSION_FILE.as_posix()}"], text=True
+                )
+                main_v = get_ver(main_v_content)
+            else:
+                main_v = None
         except Exception:
             main_v = None
 
@@ -165,12 +213,13 @@ def main():
     fixed_deps = False
     if do_upgrade:
         fixed_deps = task_upgrade_deps()
+    task_tests()
 
     fixed_version, new_v = task_version_bump()
 
     # --- CI Specific Logic ---
     if is_ci and (fixed_format or fixed_deps or fixed_version):
-        print("\n📤 --- 4. PUSH & REPORT ---")
+        print("\n📤 --- 5. PUSH & REPORT ---")
 
         run(["git", "config", "--global", "user.name", "github-actions[bot]"])
         run(

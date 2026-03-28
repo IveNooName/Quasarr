@@ -19,7 +19,7 @@ from quasarr.providers.cloudflare import (
 )
 from quasarr.providers.hostname_issues import mark_hostname_issue
 from quasarr.providers.log import debug, info
-from quasarr.providers.utils import is_flaresolverr_available
+from quasarr.providers.utils import detect_crypter_type, is_flaresolverr_available
 
 
 class Source(AbstractDownloadSource):
@@ -202,12 +202,13 @@ def _resolve_wd_redirect(shared_state, url, session_id=None):
                 timeout=DOWNLOAD_REQUEST_TIMEOUT_SECONDS,
                 session_id=session_id,
             )
-            if r.status_code == 200:
-                if r.url.endswith("/404.html"):
-                    return None
+            if r.url.endswith("/404.html"):
+                return None
+            if detect_crypter_type(r.url) == "filecrypt":
                 return r.url
-            else:
-                info(f"Blocked attempt to resolve {url}. Status: {r.status_code}")
+            if r.status_code == 200 and r.url != url:
+                return r.url
+            info(f"Blocked attempt to resolve {url}. Status: {r.status_code}")
         except Exception as e:
             info(f"FlareSolverr error fetching redirected URL for {url}: {e}")
             # Fallback to requests if FlareSolverr fails?
@@ -217,27 +218,48 @@ def _resolve_wd_redirect(shared_state, url, session_id=None):
     # Fallback to regular requests if FlareSolverr not used or failed/not configured
     try:
         user_agent = shared_state.values["user_agent"]
-        r = requests.get(
-            url,
-            allow_redirects=True,
-            timeout=DOWNLOAD_REQUEST_TIMEOUT_SECONDS,
-            headers={"User-Agent": user_agent},
-        )
-        r.raise_for_status()
-        if r.history:
-            for resp in r.history:
-                debug(f"Redirected from {resp.url} to {r.url}")
-            return r.url
-        else:
-            # If no history, maybe it wasn't a redirect or it blocked us?
-            # WD usually redirects. If we get 200 OK but same URL, it might be a block page or direct link?
-            # The original code assumed if no history -> blocked.
-            # But if it's a direct link, history is empty.
-            # Keep the original behavior: no redirect history is treated as blocked.
+        current_url = url
+        visited = set()
+        session = requests.Session()
+
+        for _hop in range(8):
+            if current_url in visited:
+                debug(f"WD redirect loop detected for {current_url}")
+                return None
+            visited.add(current_url)
+
+            if detect_crypter_type(current_url) == "filecrypt":
+                return current_url
+
+            r = session.get(
+                current_url,
+                allow_redirects=False,
+                timeout=DOWNLOAD_REQUEST_TIMEOUT_SECONDS,
+                headers={"User-Agent": user_agent},
+            )
+
+            location = (r.headers.get("Location") or "").strip()
+            if location:
+                next_url = urljoin(current_url, location)
+                debug(f"Redirected from {current_url} to {next_url}")
+                if next_url.endswith("/404.html"):
+                    return None
+                current_url = next_url
+                continue
+
+            final_url = (r.url or current_url).strip()
+            if final_url.endswith("/404.html"):
+                return None
+            if detect_crypter_type(final_url) == "filecrypt":
+                return final_url
+            if r.status_code >= 400:
+                info(f"Blocked attempt to resolve {url}. Status: {r.status_code}")
+                return None
             info(
                 f"Blocked attempt to resolve {url}. "
                 "Your IP may be banned. Try again later."
             )
+            return None
     except Exception as e:
         info(f"Error fetching redirected URL for {url}: {e}")
         mark_hostname_issue(
