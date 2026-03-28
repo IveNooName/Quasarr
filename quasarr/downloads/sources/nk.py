@@ -11,6 +11,7 @@ from quasarr.constants import DOWNLOAD_REQUEST_TIMEOUT_SECONDS
 from quasarr.downloads.sources.helpers.abstract_source import AbstractDownloadSource
 from quasarr.providers.hostname_issues import mark_hostname_issue
 from quasarr.providers.log import debug, info
+from quasarr.providers.utils import detect_crypter_type
 
 
 class Source(AbstractDownloadSource):
@@ -103,7 +104,7 @@ def _is_nk_redirect_link(url, host):
 
 
 def _is_filecrypt_link(url):
-    return "filecrypt." in (url or "").lower()
+    return detect_crypter_type(url) == "filecrypt"
 
 
 def _resolve_nk_redirect(session, url, headers, title):

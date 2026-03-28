@@ -14,6 +14,7 @@ from quasarr.constants import DOWNLOAD_REQUEST_TIMEOUT_SECONDS
 from quasarr.downloads.sources.helpers.abstract_source import AbstractDownloadSource
 from quasarr.providers.hostname_issues import mark_hostname_issue
 from quasarr.providers.log import debug, info
+from quasarr.providers.utils import detect_crypter_type
 
 
 class Source(AbstractDownloadSource):
@@ -105,18 +106,18 @@ class Source(AbstractDownloadSource):
                 url_hosters.append((href, link_hostname))
 
             def _is_protected_or_auto_link(candidate_url):
-                lowered = (candidate_url or "").lower()
-                return (
-                    "filecrypt." in lowered
-                    or "hide." in lowered
-                    or "tolink." in lowered
-                    or "keeplinks." in lowered
-                )
+                return detect_crypter_type(candidate_url) in {
+                    "filecrypt",
+                    "hide",
+                    "tolink",
+                    "keeplinks",
+                }
 
             def resolve_redirect(href_hostname):
                 href, _hostname = href_hostname
                 current_url = href
                 visited = set()
+                session = requests.Session()
 
                 # If iframe already gives protected/auto URL, return directly.
                 if _is_protected_or_auto_link(current_url):
@@ -134,7 +135,7 @@ class Source(AbstractDownloadSource):
                     try:
                         # Resolve redirect chain manually so we can capture final
                         # FileCrypt URL without requesting FileCrypt itself.
-                        rq = requests.get(
+                        rq = session.get(
                             current_url,
                             headers=headers,
                             timeout=DOWNLOAD_REQUEST_TIMEOUT_SECONDS,

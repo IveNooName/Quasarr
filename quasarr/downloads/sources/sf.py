@@ -4,6 +4,7 @@
 
 import re
 from datetime import datetime
+from urllib.parse import urljoin
 
 import requests
 from bs4 import BeautifulSoup
@@ -12,6 +13,7 @@ from quasarr.constants import DOWNLOAD_REQUEST_TIMEOUT_SECONDS
 from quasarr.downloads.sources.helpers.abstract_source import AbstractDownloadSource
 from quasarr.providers.hostname_issues import mark_hostname_issue
 from quasarr.providers.log import debug, info
+from quasarr.providers.utils import detect_crypter_type
 
 
 class Source(AbstractDownloadSource):
@@ -272,30 +274,66 @@ def _is_last_section_integer(url):
 
 
 def _resolve_sf_redirect(url, user_agent):
-    """Follow redirects and return final URL or None if 404."""
-    try:
-        r = requests.get(
-            url,
-            allow_redirects=True,
-            timeout=DOWNLOAD_REQUEST_TIMEOUT_SECONDS,
-            headers={"User-Agent": user_agent},
-        )
-        r.raise_for_status()
-        if r.history:
-            for resp in r.history:
-                debug(f"Redirected from <d>{resp.url}</d> to <d>{r.url}</d>")
-            if "/404.html" in r.url:
-                info(f"Link redirected to 404 page: <d>{r.url}</d>")
-                return None
-            return r.url
-        else:
-            info(
-                f"Blocked attempt to resolve {url}. "
-                "Your IP may be banned. Try again later."
+    """Resolve SF redirects without requesting the final FileCrypt page."""
+    current_url = url
+    visited = set()
+    session = requests.Session()
+
+    for _hop in range(8):
+        if current_url in visited:
+            debug(f"SF redirect loop detected for {current_url}")
+            return None
+        visited.add(current_url)
+
+        if detect_crypter_type(current_url) == "filecrypt":
+            return current_url
+
+        try:
+            r = session.get(
+                current_url,
+                allow_redirects=False,
+                timeout=DOWNLOAD_REQUEST_TIMEOUT_SECONDS,
+                headers={"User-Agent": user_agent},
             )
-    except Exception as e:
-        info(f"Error fetching redirected URL for {url}: {e}")
-        mark_hostname_issue(
-            Source.initials, "download", str(e) if "e" in dir() else "Download error"
+        except Exception as e:
+            info(f"Error fetching redirected URL for {url}: {e}")
+            mark_hostname_issue(
+                Source.initials,
+                "download",
+                str(e) if "e" in dir() else "Download error",
+            )
+            return None
+
+        location = (r.headers.get("Location") or "").strip()
+        if location:
+            next_url = urljoin(current_url, location)
+            debug(f"Redirected from <d>{current_url}</d> to <d>{next_url}</d>")
+            if "/404.html" in next_url:
+                info(f"Link redirected to 404 page: <d>{next_url}</d>")
+                return None
+            current_url = next_url
+            continue
+
+        final_url = (r.url or current_url).strip()
+        if "/404.html" in final_url:
+            info(f"Link redirected to 404 page: <d>{final_url}</d>")
+            return None
+        if detect_crypter_type(final_url) == "filecrypt":
+            return final_url
+        if r.status_code >= 400:
+            info(
+                f"Error fetching redirected URL for {url}: HTTP {r.status_code} at {final_url}"
+            )
+            mark_hostname_issue(
+                Source.initials,
+                "download",
+                f"HTTP {r.status_code} while resolving redirect",
+            )
+            return None
+        info(
+            f"Blocked attempt to resolve {url}. Your IP may be banned. Try again later."
         )
+        return None
+
+    debug(f"SF redirect hop limit exceeded for {url}")
     return None
