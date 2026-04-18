@@ -12,6 +12,7 @@ from quasarr.downloads import download
 from quasarr.downloads.packages import get_packages
 from quasarr.providers.auth import require_api_key
 from quasarr.providers.log import debug, error, info
+from quasarr.providers.imdb_metadata import get_imdb_id_from_title
 from quasarr.search import get_search_results
 from quasarr.storage.config import Config
 from quasarr.storage.sqlite_database import DataBase
@@ -85,11 +86,16 @@ def _search_category_for_media_type(media_type):
 
 
 def _search_releases(shared_state, query, media_type):
+    imdb_id = get_imdb_id_from_title(shared_state, query, language="en")
+    if not imdb_id:
+        debug(f"WebUI search could not resolve IMDb ID for query: {query}")
+        return []
+
     releases = get_search_results(
         shared_state=shared_state,
         request_from="Quasarr WebUI",
         search_category=_search_category_for_media_type(media_type),
-        search_phrase=query,
+        imdb_id=imdb_id,
         offset=0,
         limit=100,
     )
