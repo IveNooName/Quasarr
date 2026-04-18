@@ -14,6 +14,7 @@ from quasarr.api.jdownloader import get_jdownloader_status
 from quasarr.api.packages import setup_packages_routes
 from quasarr.api.sponsors_helper import setup_sponsors_helper_routes
 from quasarr.api.statistics import setup_statistics
+from quasarr.api.webui import setup_webui_routes
 from quasarr.constants import (
     TIMEOUT_SLOW_MODE_DEFINITIONS,
     TIMEOUT_SLOW_MODE_MULTIPLIER,
@@ -56,6 +57,7 @@ def get_api(shared_state_dict, shared_state_lock):
     setup_statistics(app, shared_state)
     setup_sponsors_helper_routes(app)
     setup_packages_routes(app)
+    setup_webui_routes(app, shared_state)
     audit_route_auth_modes(
         app,
         api_key_prefixes=("/api", "/download/", "/sponsors_helper/api/"),

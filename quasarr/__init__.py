@@ -12,6 +12,7 @@ from dotenv import load_dotenv
 
 import quasarr.providers.web_server
 from quasarr.api import get_api
+from quasarr.api.webui import webui_arr_monitor_loop
 from quasarr.constants import FALLBACK_USER_AGENT
 from quasarr.providers import shared_state, version
 from quasarr.providers.hostname_issues import clear_all_hostname_issues
@@ -241,6 +242,13 @@ def run():
             daemon=True,
         )
         updater.start()
+
+        arr_monitor = multiprocessing.Process(
+            target=webui_arr_monitor_loop,
+            args=(shared_state_dict, shared_state_lock),
+            daemon=True,
+        )
+        arr_monitor.start()
 
         try:
             get_api(shared_state_dict, shared_state_lock)
