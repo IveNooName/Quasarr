@@ -541,17 +541,24 @@ def get_imdb_metadata(imdb_id):
     return imdb_metadata
 
 
-def get_imdb_id_from_title(shared_state, title, language="de"):
+def get_imdb_id_from_title(shared_state, title, language="de", media_type=None):
+    if not title:
+        return None
+
+    title_str = str(title).strip()
+    if re.match(r"^tt\d+$", title_str):
+        return title_str
+
     imdb_id = None
 
-    if re.search(r"S\d{1,3}(E\d{1,3})?", title, re.IGNORECASE):
+    if media_type == "tv" or (media_type is None and re.search(r"S\d{1,3}(E\d{1,3})?", title_str, re.IGNORECASE)):
         ttype_api = "TV_SERIES"
         ttype_web = "tv"
     else:
         ttype_api = "MOVIE"
         ttype_web = "ft"
 
-    title = TitleCleaner.clean(title)
+    title = TitleCleaner.clean(title_str)
 
     # 0. Check Search Cache
     db = _get_db("imdb_searches")

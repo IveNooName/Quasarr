@@ -86,7 +86,7 @@ def _search_category_for_media_type(media_type):
 
 
 def _search_releases(shared_state, query, media_type):
-    imdb_id = get_imdb_id_from_title(shared_state, query, language="en")
+    imdb_id = get_imdb_id_from_title(shared_state, query, language="en", media_type=media_type)
     if not imdb_id:
         debug(f"WebUI search could not resolve IMDb ID for query: {query}")
         return []
