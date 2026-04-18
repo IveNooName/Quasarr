@@ -11,8 +11,8 @@ from bottle import request, response
 from quasarr.downloads import download
 from quasarr.downloads.packages import get_packages
 from quasarr.providers.auth import require_api_key
-from quasarr.providers.log import debug, error, info
 from quasarr.providers.imdb_metadata import get_imdb_id_from_title
+from quasarr.providers.log import debug, error, info
 from quasarr.search import get_search_results
 from quasarr.storage.config import Config
 from quasarr.storage.sqlite_database import DataBase
@@ -71,7 +71,9 @@ def _save_arr_config(payload):
     Config("Sonarr").save("api_key", (payload.get("sonarr_api_key") or "").strip())
     Config("Radarr").save("url", (payload.get("radarr_url") or "").strip())
     Config("Radarr").save("api_key", (payload.get("radarr_api_key") or "").strip())
-    Config("WebUI").save("downloads_path", (payload.get("downloads_path") or "").strip())
+    Config("WebUI").save(
+        "downloads_path", (payload.get("downloads_path") or "").strip()
+    )
 
 
 def _normalize_media_type(value):
@@ -191,14 +193,18 @@ def webui_arr_monitor_loop(shared_state_dict, shared_state_lock):
                 if not downloads_path:
                     continue
 
-                history_item = _get_history_entry_by_package_id(shared_state, package_id)
+                history_item = _get_history_entry_by_package_id(
+                    shared_state, package_id
+                )
                 if not history_item:
                     continue
 
                 is_archive = bool(history_item.get("is_archive"))
                 extraction_ok = bool(history_item.get("extraction_ok"))
                 status = str(history_item.get("status", "")).lower()
-                is_finished = status == "completed" and ((not is_archive) or extraction_ok)
+                is_finished = status == "completed" and (
+                    (not is_archive) or extraction_ok
+                )
                 if not is_finished:
                     continue
 
@@ -458,7 +464,9 @@ def setup_webui_routes(app, shared_state):
 
         is_failed = bool(result.get("failed"))
         protected_data = (
-            shared_state.get_db("protected").retrieve(package_id) if package_id else None
+            shared_state.get_db("protected").retrieve(package_id)
+            if package_id
+            else None
         )
         captcha_required = bool(protected_data) and not is_failed
 
