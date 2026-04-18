@@ -83,42 +83,34 @@ def _normalize_media_type(value):
     return "tv"
 
 
-def _search_category_for_media_type(media_type):
-    return 2000 if media_type == "movie" else 5000
-
-
-def _search_releases(shared_state, query, media_type):
-    imdb_id = get_imdb_id_from_title(shared_state, query, language="en")
-    if not imdb_id:
-        debug(f"WebUI search could not resolve IMDb ID for query: {query}")
-        return []
-
-    releases = get_search_results(
-        shared_state=shared_state,
-        request_from="Quasarr WebUI",
-        search_category=_search_category_for_media_type(media_type),
+def _search_releases(shared_state, query, imdb_id, category):
+    results = get_search_results(
+        shared_state,
+        request_from="Quasarr-WebUI",
+        search_category=int(category),
+        search_phrase=query,
         imdb_id=imdb_id,
         offset=0,
-        limit=100,
+        limit=500,
     )
-    data = []
-    for item in releases:
-        details = item.get("details", {})
-        data.append(
-            {
-                "title": details.get("title", ""),
-                "size": details.get("size", 0),
-                "size_mb": details.get("size_mb", 0),
-                "link": details.get("link", ""),
-                "source": details.get("source", ""),
-                "source_key": details.get("source_key", ""),
-                "password": details.get("password", ""),
-                "imdb_id": details.get("imdb_id", ""),
-                "hostname": details.get("hostname", ""),
-                "date": details.get("date", ""),
-            }
-        )
-    return data
+    cleaned = []
+    for result_item in results:
+        details = result_item.get("details", {})
+        if details and details.get("link"):
+            cleaned.append(
+                {
+                    "title": details.get("title", "Unknown"),
+                    "size": details.get("size", "Unknown"),
+                    "link": details.get("link", ""),
+                    "source": details.get("source", "Unknown"),
+                    "date": details.get("date", ""),
+                    "password": details.get("password", ""),
+                    "imdb_id": details.get("imdb_id", ""),
+                    "source_key": details.get("source_key", ""),
+                    "size_mb": details.get("size_mb", 0),
+                }
+            )
+    return cleaned
 
 
 def _register_arr_monitor(package_id, media_type, downloads_path):
@@ -239,163 +231,126 @@ def setup_webui_routes(app, shared_state):
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Quasarr Web UI</title>
+  <title>Quasarr Media Browser</title>
   <style>
-    body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 0; background: #0f1115; color: #e5e7eb; }}
-    .container {{ max-width: 1080px; margin: 0 auto; padding: 24px; }}
-    .card {{ background: #171a21; border: 1px solid #2b303b; border-radius: 10px; padding: 16px; margin-bottom: 18px; }}
-    h1,h2 {{ margin: 0 0 12px 0; }}
-    .grid {{ display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }}
-    label {{ display: block; font-size: 13px; margin-bottom: 6px; color: #9ca3af; }}
-    input, select, button {{ width: 100%; box-sizing: border-box; border-radius: 8px; border: 1px solid #374151; background: #111827; color: #e5e7eb; padding: 9px 10px; }}
-    button {{ cursor: pointer; background: #2563eb; border-color: #2563eb; font-weight: 600; }}
-    button.secondary {{ background: #1f2937; border-color: #374151; }}
-    .row {{ display: flex; gap: 10px; }}
-    .row > * {{ flex: 1; }}
-    .status {{ margin-top: 10px; font-size: 13px; color: #93c5fd; }}
-    .results {{ max-height: 420px; overflow: auto; border: 1px solid #2b303b; border-radius: 8px; }}
-    .release {{ display: grid; grid-template-columns: 1fr auto; gap: 8px; border-bottom: 1px solid #262b35; padding: 10px; }}
-    .release:last-child {{ border-bottom: 0; }}
-    .meta {{ font-size: 12px; color: #9ca3af; margin-top: 4px; }}
-    a {{ color: #93c5fd; }}
+    :root {{ --bg: #1e1e2e; --surface: #313244; --text: #cdd6f4; --primary: #89b4fa; --error: #f38ba8; }}
+    body {{ font-family: system-ui, sans-serif; background: var(--bg); color: var(--text); padding: 2rem; max-width: 1000px; margin: 0 auto; }}
+    .search-container {{ display: flex; gap: 1rem; margin-bottom: 2rem; flex-wrap: wrap; }}
+    input, select, button {{ padding: 0.75rem; border-radius: 0.5rem; border: 1px solid var(--surface); background: var(--surface); color: var(--text); font-size: 1rem; }}
+    button {{ background: var(--primary); color: var(--bg); font-weight: bold; cursor: pointer; border: none; transition: opacity 0.2s; min-width: 120px; }}
+    button:disabled {{ opacity: 0.5; cursor: not-allowed; }}
+    .error {{ color: var(--error); padding: 1rem; background: rgba(243, 139, 168, 0.1); border-radius: 0.5rem; margin-bottom: 1rem; display: none; }}
+    .results {{ display: grid; gap: 1rem; }}
+    .result-card {{ background: var(--surface); padding: 1rem; border-radius: 0.5rem; display: flex; justify-content: space-between; align-items: center; word-break: break-all; }}
+    .loader {{ display: none; margin-left: 1rem; align-self: center; }}
   </style>
 </head>
 <body>
-  <div class="container">
-    <h1>Quasarr Central Web UI</h1>
-    <div class="card">
-      <h2>Config UI</h2>
-      <div class="grid">
-        <div><label>Sonarr URL</label><input id="sonarr_url" placeholder="http://sonarr:8989" /></div>
-        <div><label>Sonarr API Key</label><input id="sonarr_api_key" /></div>
-        <div><label>Radarr URL</label><input id="radarr_url" placeholder="http://radarr:7878" /></div>
-        <div><label>Radarr API Key</label><input id="radarr_api_key" /></div>
-        <div><label>Shared Downloads Path</label><input id="downloads_path" placeholder="/downloads" /></div>
-        <div><label>JDownloader Device</label><input id="jdownloader_device" disabled /></div>
-      </div>
-      <div class="row" style="margin-top:10px;">
-        <button id="saveConfigBtn">Save Settings</button>
-        <button class="secondary" id="reloadConfigBtn">Reload</button>
-      </div>
-      <div id="configStatus" class="status"></div>
-      <div class="meta">TrueNAS permissions (PUID/PGID): <span id="permMeta"></span></div>
-    </div>
-
-    <div class="card">
-      <h2>Media Browser & Search</h2>
-      <div class="row">
-        <input id="searchQuery" placeholder="Search title..." />
-        <select id="mediaType"><option value="tv">TV</option><option value="movie">Movie</option></select>
-      </div>
-      <div class="row" style="margin-top:10px;">
-        <button id="searchBtn">Search</button>
-        <button class="secondary" id="openCaptchaBtn">Open CAPTCHA Queue</button>
-      </div>
-      <div id="searchStatus" class="status"></div>
-      <div id="results" class="results" style="margin-top:10px;"></div>
-    </div>
+  <h1>Quasarr Media Browser</h1>
+  <div class="search-container">
+    <select id="category">
+      <option value="2000">Movies (2000)</option>
+      <option value="5000">TV Shows (5000)</option>
+    </select>
+    <input type="text" id="query" placeholder="Search title or tt1234567..." style="flex-grow: 1;">
+    <button id="searchBtn">Search</button>
+    <span class="loader" id="loader">Searching... (This may take up to 2 minutes)</span>
   </div>
+  <div id="error" class="error"></div>
+  <div id="results" class="results"></div>
 
   <script>
     const API_KEY = {json.dumps(api_key)};
-    const headers = {{ "Content-Type": "application/json", "X-API-Key": API_KEY }};
-    async function api(path, options = {{}}) {{
-      const res = await fetch(path, {{
-        ...options,
-        headers: {{ ...headers, ...(options.headers || {{}}) }}
-      }});
-      if (!res.ok) {{
-        const text = await res.text();
-        throw new Error(text || `HTTP ${{res.status}}`);
+    let currentController = null;
+
+    function escapeHtml(text) {{
+      return String(text || "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }}
+
+    document.getElementById("searchBtn").addEventListener("click", async () => {{
+      const queryInput = document.getElementById("query").value.trim();
+      const category = document.getElementById("category").value;
+      const errorEl = document.getElementById("error");
+      const resultsEl = document.getElementById("results");
+      const loader = document.getElementById("loader");
+      const searchBtn = document.getElementById("searchBtn");
+
+      if (!queryInput) return;
+
+      if (currentController) currentController.abort();
+      currentController = new AbortController();
+
+      const isImdb = queryInput.startsWith("tt");
+      const queryParam = isImdb ? `imdbid=${{encodeURIComponent(queryInput)}}` : `q=${{encodeURIComponent(queryInput)}}`;
+
+      errorEl.style.display = "none";
+      resultsEl.innerHTML = "";
+      loader.style.display = "inline";
+      searchBtn.disabled = true;
+
+      try {{
+        const timeoutId = setTimeout(() => currentController.abort(), 120000);
+
+        const response = await fetch(`/api/webui/search?cat=${{encodeURIComponent(category)}}&${{queryParam}}`, {{
+          signal: currentController.signal,
+          headers: {{ "X-API-Key": API_KEY }}
+        }});
+
+        clearTimeout(timeoutId);
+
+        if (!response.ok) throw new Error(`HTTP Error: ${{response.status}}`);
+
+        const data = await response.json();
+        if (!data.status) throw new Error(data.error || "Unknown backend error");
+
+        if (data.results.length === 0) {{
+          resultsEl.innerHTML = '<div class="result-card">No results found.</div>';
+        }} else {{
+          data.results.forEach((res) => {{
+            const payload = encodeURIComponent(JSON.stringify(res));
+            const card = document.createElement("div");
+            card.className = "result-card";
+            card.innerHTML = `
+              <div style="flex-grow: 1; padding-right: 1rem;">
+                <strong>${{escapeHtml(res.title)}}</strong><br>
+                <small>${{escapeHtml(res.size)}} | Source: ${{escapeHtml(res.source)}}</small>
+              </div>
+              <button data-payload="${{payload}}">Download</button>
+            `;
+            const downloadBtn = card.querySelector("button");
+            downloadBtn.addEventListener("click", async () => {{
+              const release = JSON.parse(decodeURIComponent(downloadBtn.dataset.payload));
+              const mediaType = category === "2000" ? "movie" : "tv";
+              const dlResp = await fetch("/api/webui/release/download", {{
+                method: "POST",
+                headers: {{ "Content-Type": "application/json", "X-API-Key": API_KEY }},
+                body: JSON.stringify({{ release: release, media_type: mediaType }})
+              }});
+              const dlData = await dlResp.json();
+              if (dlData.captcha_required && dlData.captcha_url) {{
+                window.location.href = dlData.captcha_url;
+              }}
+            }});
+            resultsEl.appendChild(card);
+          }});
+        }}
+      }} catch (err) {{
+        if (err.name === "AbortError") {{
+          errorEl.innerText = "Search timed out. Indexers took too long to respond.";
+        }} else {{
+          errorEl.innerText = err.message;
+        }}
+        errorEl.style.display = "block";
+      }} finally {{
+        loader.style.display = "none";
+        searchBtn.disabled = false;
       }}
-      return res.json();
-    }}
-
-    function setText(id, value) {{ document.getElementById(id).textContent = value || ""; }}
-    function setValue(id, value) {{ document.getElementById(id).value = value || ""; }}
-
-    async function loadConfig() {{
-      const cfg = await api("/api/webui/config");
-      setValue("sonarr_url", cfg.sonarr_url);
-      setValue("sonarr_api_key", cfg.sonarr_api_key);
-      setValue("radarr_url", cfg.radarr_url);
-      setValue("radarr_api_key", cfg.radarr_api_key);
-      setValue("downloads_path", cfg.downloads_path);
-      setValue("jdownloader_device", cfg.jdownloader_device);
-      setText("permMeta", `PUID=${{cfg.puid || "-"}}, PGID=${{cfg.pgid || "-"}}`);
-    }}
-
-    async function saveConfig() {{
-      const payload = {{
-        sonarr_url: document.getElementById("sonarr_url").value.trim(),
-        sonarr_api_key: document.getElementById("sonarr_api_key").value.trim(),
-        radarr_url: document.getElementById("radarr_url").value.trim(),
-        radarr_api_key: document.getElementById("radarr_api_key").value.trim(),
-        downloads_path: document.getElementById("downloads_path").value.trim()
-      }};
-      await api("/api/webui/config", {{ method: "POST", body: JSON.stringify(payload) }});
-      setText("configStatus", "Configuration saved.");
-    }}
-
-    function formatSize(v) {{
-      const n = Number(v || 0);
-      if (!n) return "?";
-      const mb = n / (1024 * 1024);
-      if (mb < 1024) return `${{mb.toFixed(0)}} MB`;
-      return `${{(mb / 1024).toFixed(2)}} GB`;
-    }}
-
-    function renderResults(items, mediaType) {{
-      const root = document.getElementById("results");
-      if (!items.length) {{
-        root.innerHTML = '<div class="release"><div>No results</div></div>';
-        return;
-      }}
-      root.innerHTML = items.map((item, index) => {{
-        const payload = encodeURIComponent(JSON.stringify(item));
-        return `<div class="release">
-          <div>
-            <div>${{item.title || "Untitled"}}</div>
-            <div class="meta">${{item.hostname || item.source || "unknown"}} | ${{formatSize(item.size)}} | ${{item.date || ""}}</div>
-          </div>
-          <div><button onclick="downloadRelease('${{payload}}', '${{mediaType}}')">Download</button></div>
-        </div>`;
-      }}).join("");
-    }}
-
-    async function runSearch() {{
-      const q = document.getElementById("searchQuery").value.trim();
-      const mediaType = document.getElementById("mediaType").value;
-      if (!q) {{
-        setText("searchStatus", "Query is required.");
-        return;
-      }}
-      setText("searchStatus", "Searching...");
-      const data = await api(`/api/webui/search?q=${{encodeURIComponent(q)}}&media_type=${{encodeURIComponent(mediaType)}}`);
-      renderResults(data.results || [], mediaType);
-      setText("searchStatus", `Results: ${{(data.results || []).length}}`);
-    }}
-
-    async function downloadRelease(encodedPayload, mediaType) {{
-      const release = JSON.parse(decodeURIComponent(encodedPayload));
-      setText("searchStatus", "Submitting release...");
-      const data = await api("/api/webui/release/download", {{
-        method: "POST",
-        body: JSON.stringify({{ release, media_type: mediaType }})
-      }});
-      if (data.captcha_required) {{
-        setText("searchStatus", "CAPTCHA required. Opening CAPTCHA flow...");
-        window.location.href = data.captcha_url;
-        return;
-      }}
-      setText("searchStatus", data.message || "Submitted.");
-    }}
-
-    document.getElementById("saveConfigBtn").addEventListener("click", () => saveConfig().catch(e => setText("configStatus", e.message)));
-    document.getElementById("reloadConfigBtn").addEventListener("click", () => loadConfig().catch(e => setText("configStatus", e.message)));
-    document.getElementById("searchBtn").addEventListener("click", () => runSearch().catch(e => setText("searchStatus", e.message)));
-    document.getElementById("openCaptchaBtn").addEventListener("click", () => window.location.href = "/captcha");
-    loadConfig().catch(e => setText("configStatus", e.message));
+    }});
   </script>
 </body>
 </html>"""
@@ -423,11 +378,25 @@ def setup_webui_routes(app, shared_state):
     @require_api_key
     def webui_search():
         query = (request.query.get("q") or "").strip()
-        media_type = _normalize_media_type(request.query.get("media_type"))
-        if not query:
+        imdb_id = (request.query.get("imdbid") or "").strip()
+        category = (request.query.get("cat") or "2000").strip()
+        if not query and not imdb_id:
             response.status = 400
-            return {"success": False, "message": "Missing query"}
-        results = _search_releases(shared_state, query, media_type)
+            return {
+                "status": False,
+                "error": "Search query or IMDb ID required.",
+            }
+
+        try:
+            results = _search_releases(shared_state, query, imdb_id, category)
+        except Exception as exc:
+            response.status = 500
+            return {
+                "status": False,
+                "error": str(exc),
+                "traceback": traceback.format_exc(),
+            }
+
         response.content_type = "application/json"
         return {"success": True, "results": results}
 
